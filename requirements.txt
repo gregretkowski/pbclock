@@ -1,0 +1,2 @@
+pyqt5
+# Installed aider-chat but it is not needed for the application
