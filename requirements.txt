@@ -1,2 +1,8 @@
 pyqt5
 # Installed aider-chat but it is not needed for the application
+# aider-chat[playwright]
+requests
+beautifulsoup4
+
+astral
+pytz
