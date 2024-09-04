@@ -114,8 +114,8 @@ class MainWindow(QWidget):
 
         if 'observations' in data and data['observations']:
             observation = data['observations'][0]
-            wind_speed = observation['imperial']['windSpeed']
-            wind_gust = observation['imperial']['windGust']
+            wind_speed = int(observation['imperial']['windSpeed'])
+            wind_gust = int(observation['imperial']['windGust'])
             wind_dir = observation['winddir']
 
             # Convert wind direction to cardinal direction
@@ -123,11 +123,69 @@ class MainWindow(QWidget):
             ix = round(wind_dir / 22.5) % 16
             cardinal_dir = dirs[ix]
 
-            logging.info(f"Wind data fetched: {int(wind_speed)}g{int(wind_gust)} {cardinal_dir}")
-            return f"{int(wind_speed)}g{int(wind_gust)} {cardinal_dir}"
+            logging.info(f"Wind data fetched: {wind_speed}g{wind_gust} {cardinal_dir}")
+            return {
+                'speed': wind_speed,
+                'gust': wind_gust,
+                'direction': cardinal_dir
+            }
+
         else:
             logging.warning("Failed to fetch wind data")
             return "N/A"
+
+    def fetch_tidetimes(self):
+        logging.info("Fetching tide times data")
+        today_date = datetime.now().strftime('%Y%m%d')
+        url = f"https://tidesandcurrents.noaa.gov/cgi-bin/stationtideinfo.cgi?Stationid=9410230&datum=MLLW&timezone=LST_LDT&units=english&clock=12hour&decimalPlaces=2&date={today_date}"
+        response = requests.get(url)
+        if response.status_code != 200:
+            logging.warning("Failed to fetch tide times data")
+            return "N/A"
+
+        tide_data = response.text.splitlines()
+        tide_events = []
+        for line in tide_data:
+            parts = line.split('|')
+            if len(parts) == 3:
+                time_str, height, event_type = parts
+                tide_events.append((time_str, event_type))
+
+        current_time = datetime.now()
+        next_event = None
+        for time_str, event_type in tide_events:
+            time_str_dt = datetime.strptime(time_str, '%I:%M %p')
+            current_time_str = current_time.strftime('%I:%M %p')
+            current_time_dt = datetime.strptime(current_time_str, '%I:%M %p')
+            logging.info(f"Comparing time_str: {time_str_dt} with current_time: {current_time_dt}")
+            if time_str_dt > current_time_dt:
+                next_event = (time_str, event_type)
+                break
+
+        if not next_event:
+            # Fetch tomorrow's tide times if no upcoming tide events today
+            tomorrow_date = (current_time + timedelta(days=1)).strftime('%Y%m%d')
+            url = f"https://tidesandcurrents.noaa.gov/cgi-bin/stationtideinfo.cgi?Stationid=9410230&datum=MLLW&timezone=LST_LDT&units=english&clock=12hour&decimalPlaces=2&date={tomorrow_date}"
+            response = requests.get(url)
+            if response.status_code == 200:
+                tide_data = response.text.splitlines()
+                tide_events = []
+                for line in tide_data:
+                    parts = line.split('|')
+                    if len(parts) == 3:
+                        time_str, height, event_type = parts
+                        tide_events.append((time_str, event_type))
+                if tide_events:
+                    next_time, next_type = tide_events[0]
+                    next_event = (next_time, next_type)
+
+        if next_event:
+            next_time, next_type = next_event
+            next_time = next_time.replace(" ", "")  # Remove spaces within the time string
+            next_type = next_type.strip()  # Remove leading and trailing spaces from next_type
+            return f"{next_type.capitalize()} {next_time}"
+        else:
+            return "No upcoming tide events"
 
     def fetch_tide(self):
         logging.info(f"Fetching tide data at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -212,7 +270,7 @@ class MainWindow(QWidget):
         surf_height = float(surf_text.split('FT')[0]) if surf_text != 'N/A' else 0
         if surf_height >= 5:
             self.update_cell(grid_layout, (0, 1), 'Surf', surf_text, background_color=QColor(255, 0, 0))  # Red color
-        elif surf_height >= 2:
+        elif surf_height >= 3:
             self.update_cell(grid_layout, (0, 1), 'Surf', surf_text, background_color=QColor(0, 255, 0))  # Green color
         else:
             self.update_cell(grid_layout, (0, 1), 'Surf', surf_text)
@@ -227,10 +285,16 @@ class MainWindow(QWidget):
         tide_value = tide_data['value']
         tide_trend = tide_data['trend']
         tide_text = f"{tide_value:.1f}Ft {'v' if tide_trend == 'falling' else '^'}"
+        tide_times_data = self.fetch_tidetimes()
+        tide_text += f"\n{tide_times_data}"
         self.update_cell(grid_layout, (1, 0), 'Tide', tide_text)
 
         wind_data = self.fetch_wind()
-        self.update_cell(grid_layout, (1, 1), 'Wind', wind_data)
+        wind_text = f"{wind_data['speed']}g{wind_data['gust']} {wind_data['direction']}"
+        if wind_data['speed'] >= 11:
+            self.update_cell(grid_layout, (1, 1), 'Wind', wind_text, background_color=QColor(0, 255, 0))  # Green color
+        else:
+            self.update_cell(grid_layout, (1, 1), 'Wind', wind_text)
 
     def update_time_cell(self):
         grid_layout = self.layout()
@@ -252,7 +316,7 @@ if __name__ == '__main__':
     print(os.getppid())
     app = QApplication(sys.argv)
     main_window = MainWindow()
-    #print(main_window.fetch_wind())
+    #print(main_window.fetch_tidetimes())
     #sys.exit(0)
     #print(main_window.fetch_launches())
     #print(main_window.fetch_surf())
