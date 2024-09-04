@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 
 class MainWindow(QWidget):
     def __init__(self):
+        self.last_update_time = None
         super().__init__()
         self.initUI()
         self.timer = QTimer(self)
@@ -178,6 +179,7 @@ class MainWindow(QWidget):
         return datetime.now().strftime('%H:%M:%S')
 
     def update_data(self):
+        self.last_update_time = datetime.now()
 
         grid_layout = self.layout()
 
@@ -211,7 +213,16 @@ class MainWindow(QWidget):
     def update_time_cell(self):
         grid_layout = self.layout()
         current_time = self.fetch_current_time()
-        self.update_cell(grid_layout, (1, 2), 'Clock', current_time)
+        if self.last_update_time:
+            elapsed_time = datetime.now() - self.last_update_time
+            elapsed_seconds = int(elapsed_time.total_seconds())
+            hours, remainder = divmod(elapsed_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            elapsed_time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+        else:
+            elapsed_time_str = "N/A"
+        clock_text = f"{current_time}\n{elapsed_time_str}"
+        self.update_cell(grid_layout, (1, 2), 'Clock', clock_text)
 
 if __name__ == '__main__':
 
