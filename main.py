@@ -27,17 +27,28 @@ class MainWindow(QWidget):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-    def update_cell(self, grid_layout, position, title, text):
+    def update_cell(self, grid_layout, position, title, text, background_color=None):
         # Remove existing widget at the position if any
         if grid_layout.itemAtPosition(*position):
             existing_widget = grid_layout.itemAtPosition(*position).widget()
             existing_widget.setParent(None)
         label = QLabel(title+"\n"+text, self)
+        label.setAlignment(Qt.AlignCenter)
+        font = label.font()
+        font.setBold(True)
+        label.setFont(font)
+        if background_color:
+            label.setStyleSheet(f"background-color: {background_color.name()};")
         grid_layout.addWidget(label, *position)
 
     def initUI(self):
         self.setGeometry(100, 100, 300, 200)
         self.setWindowTitle("PyQt5 Grid")
+
+        # Set background color to light blue
+        palette = self.palette()
+        palette.setColor(self.backgroundRole(), QColor(211, 211, 211))  # Light grey color
+        self.setPalette(palette)
 
         grid_layout = QGridLayout()
         self.setLayout(grid_layout)
@@ -87,7 +98,7 @@ class MainWindow(QWidget):
         import re
         surf_forecast_text = surf_forecast.text if surf_forecast else 'N/A'  # Extract the text content
         logging.info(f"Surf forecast text: {surf_forecast_text}")
-        match = re.search(r'([\d\-\+]+)\s*ft', surf_forecast_text, re.IGNORECASE)
+        match = re.search(r'(\d+)', surf_forecast_text)
         surf_forecast_formatted = f"{match.group(1)}FT" if match else 'N/A'  # Format the extracted value and unit
         logging.info(f"Formatted surf forecast: {surf_forecast_formatted}")
 
@@ -187,13 +198,24 @@ class MainWindow(QWidget):
         if launches:
             next_launch = launches[0]
             launch_text = f"{next_launch['name']}\n{next_launch['time_diff']}"
+            days, hours = next_launch['time_diff'].split('D ')
+            hours = int(hours[:-1])  # Remove the 'H' and convert to int
+            if int(days) == 0 and hours < 4:
+                self.update_cell(grid_layout, (0, 0), 'Launches', launch_text, background_color=QColor(0, 255, 0))  # Green color
+            else:
+                self.update_cell(grid_layout, (0, 0), 'Launches', launch_text)
         else:
-            launch_text = 'None'
-        self.update_cell(grid_layout, (0, 0), 'Launches', launch_text)
+            self.update_cell(grid_layout, (0, 0), 'Launches', 'None')
 
         surf_data = self.fetch_surf()
         surf_text = surf_data['surf_forecast']
-        self.update_cell(grid_layout, (0, 1), 'Surf', surf_text)
+        surf_height = float(surf_text.split('FT')[0]) if surf_text != 'N/A' else 0
+        if surf_height >= 5:
+            self.update_cell(grid_layout, (0, 1), 'Surf', surf_text, background_color=QColor(255, 0, 0))  # Red color
+        elif surf_height >= 2:
+            self.update_cell(grid_layout, (0, 1), 'Surf', surf_text, background_color=QColor(0, 255, 0))  # Green color
+        else:
+            self.update_cell(grid_layout, (0, 1), 'Surf', surf_text)
 
         sun_data = self.fetch_sunriseset()
         event_symbol = '^' if sun_data['event'] == 'sunrise' else 'v'
