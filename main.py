@@ -36,13 +36,16 @@ class MainWindow(QWidget):
         label.setAlignment(Qt.AlignCenter)
         font = label.font()
         font.setBold(True)
+        font.setPointSize(font.pointSize() * 2)  # Double the font size
         label.setFont(font)
         if background_color:
-            label.setStyleSheet(f"background-color: {background_color.name()};")
+            label.setStyleSheet(f"background-color: {background_color.name()}; border: 1px solid black;")
+        else:
+            label.setStyleSheet("border: 1px solid black;")
         grid_layout.addWidget(label, *position)
 
     def initUI(self):
-        self.setGeometry(100, 100, 300, 200)
+        self.setGeometry(100, 100, 480, 320)
         self.setWindowTitle("PyQt5 Grid")
 
         # Set background color to light blue
@@ -60,11 +63,11 @@ class MainWindow(QWidget):
         for i, title in enumerate(titles):
             self.update_cell(grid_layout, (0, i), title, "")
 
-        cell_texts = [
-            "1 ^v", "2 ^v", "3 ^v",
-            "4 ^v", "5 ^v", "6 ^v"
-        ]
-
+        #cell_texts = [
+        #    "1 ^v", "2 ^v", "3 ^v",
+        #    "4 ^v", "5 ^v", "6 ^v"
+        #]
+        cell_texts = ["Loading"] * 6
         positions = [(i, j) for i in range(2) for j in range(3)]
 
         for position, text in zip(positions, cell_texts):
@@ -78,7 +81,7 @@ class MainWindow(QWidget):
         filtered_data = []
         current_time = datetime.now()
         for item in data:
-            if 'vandenberg' in item['location'].lower():
+            if any(loc in item['location'].lower() for loc in ['vandenberg', 'chica']):
                 net_time = datetime.strptime(item['net'], '%Y-%m-%dT%H:%M:%SZ')
                 time_diff = net_time - current_time
                 days = time_diff.days
@@ -181,9 +184,10 @@ class MainWindow(QWidget):
 
         if next_event:
             next_time, next_type = next_event
-            next_time = next_time.replace(" ", "")  # Remove spaces within the time string
+            next_time_dt = datetime.strptime(next_time, '%I:%M %p')
+            next_time_formatted = next_time_dt.strftime('%I:%M')  # Format without AM/PM
             next_type = next_type.strip()  # Remove leading and trailing spaces from next_type
-            return f"{next_type.capitalize()} {next_time}"
+            return f"{next_type.capitalize()}@{next_time_formatted}"
         else:
             return "No upcoming tide events"
 
@@ -245,10 +249,10 @@ class MainWindow(QWidget):
         }
 
     def fetch_current_time(self):
-        return datetime.now().strftime('%H:%M:%S')
+        return datetime.now().strftime('%I:%M:%S')
 
     def update_data(self):
-        self.last_update_time = datetime.now()
+        # Move updating last_update_time to the end of the method
 
         grid_layout = self.layout()
 
@@ -258,7 +262,7 @@ class MainWindow(QWidget):
             launch_text = f"{next_launch['name']}\n{next_launch['time_diff']}"
             days, hours = next_launch['time_diff'].split('D ')
             hours = int(hours[:-1])  # Remove the 'H' and convert to int
-            if int(days) == 0 and hours < 4:
+            if int(days) == 0 and hours < 20:
                 self.update_cell(grid_layout, (0, 0), 'Launches', launch_text, background_color=QColor(0, 255, 0))  # Green color
             else:
                 self.update_cell(grid_layout, (0, 0), 'Launches', launch_text)
@@ -296,6 +300,8 @@ class MainWindow(QWidget):
         else:
             self.update_cell(grid_layout, (1, 1), 'Wind', wind_text)
 
+        self.last_update_time = datetime.now()  # Update last_update_time at the end
+
     def update_time_cell(self):
         grid_layout = self.layout()
         current_time = self.fetch_current_time()
@@ -304,7 +310,7 @@ class MainWindow(QWidget):
             elapsed_seconds = int(elapsed_time.total_seconds())
             hours, remainder = divmod(elapsed_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
-            elapsed_time_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+            elapsed_time_str = f"Upd -{minutes}M"
         else:
             elapsed_time_str = "N/A"
         clock_text = f"{current_time}\n{elapsed_time_str}"
