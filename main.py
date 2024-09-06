@@ -25,6 +25,11 @@ class MainWindow(QWidget):
     _ui_width = 480
     _ui_height = 320
 
+    _color_green = QColor(0, 255, 0)
+    _color_yellow = QColor(255, 255, 0)
+    _color_red = QColor(255, 0, 0)
+    _color_orange = QColor(255, 128, 0)
+
     def __init__(self):
         self.last_update_time = None
         super().__init__()
@@ -51,6 +56,9 @@ class MainWindow(QWidget):
         font.setBold(True)
         font.setPointSize(font.pointSize() * 2)  # Double the font size
         label.setFont(font)
+        if isinstance(background_color, str):
+            background_color = QColor(background_color)
+
         if background_color:
             label.setStyleSheet(f"background-color: {background_color.name()}; border: 1px solid black;")
         else:
@@ -200,7 +208,7 @@ class MainWindow(QWidget):
                 return surf_text, QColor(255, 0, 0)  # Red color
                 #self.update_cell(grid_layout, (0, 2), 'Surf', surf_text, background_color=QColor(255, 0, 0))  # Red color
             elif surf_height >= 3:
-                return surf_text, QColor(0, 255, 0)  # Green color
+                return surf_text, self._color_green #QColor(0, 255, 0)  # Green color
                 #self.update_cell(grid_layout, (0, 2), 'Surf', surf_text, background_color=QColor(0, 255, 0))  # Green color
             else:
                 #self.update_cell(grid_layout, (0, 2), 'Surf', surf_text)
@@ -208,32 +216,44 @@ class MainWindow(QWidget):
         fetch_surf()
 
     def fetch_wind(self):
-        logging.info(f"Fetching wind data at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        url = "https://api.weather.com/v2/pws/observations/current?apiKey=e1f10a1e78da46f5b10a1e78da96f525&stationId=KCASANDI141&numericPrecision=decimal&format=json&units=e"
-        response = requests.get(url)
-        data = response.json()
+        @self.datacell((1, 1), "Wind")
+        def fetch_wind():
+            logging.info(f"Fetching wind data at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            url = "https://api.weather.com/v2/pws/observations/current?apiKey=e1f10a1e78da46f5b10a1e78da96f525&stationId=KCASANDI141&numericPrecision=decimal&format=json&units=e"
+            response = requests.get(url)
+            data = response.json()
 
-        if 'observations' in data and data['observations']:
-            observation = data['observations'][0]
-            wind_speed = int(observation['imperial']['windSpeed'])
-            wind_gust = int(observation['imperial']['windGust'])
-            wind_dir = observation['winddir']
+            if 'observations' in data and data['observations']:
+                observation = data['observations'][0]
+                wind_speed = int(observation['imperial']['windSpeed'])
+                wind_gust = int(observation['imperial']['windGust'])
+                wind_dir = observation['winddir']
 
-            # Convert wind direction to cardinal direction
-            dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
-            ix = round(wind_dir / 22.5) % 16
-            cardinal_dir = dirs[ix]
+                # Convert wind direction to cardinal direction
+                dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+                ix = round(wind_dir / 22.5) % 16
+                cardinal_dir = dirs[ix]
 
-            logging.info(f"Wind data fetched: {wind_speed}g{wind_gust} {cardinal_dir}")
-            return {
-                'speed': wind_speed,
-                'gust': wind_gust,
-                'direction': cardinal_dir
-            }
+                logging.info(f"Wind data fetched: {wind_speed}g{wind_gust} {cardinal_dir}")
+                wind_data = {
+                    'speed': wind_speed,
+                    'gust': wind_gust,
+                    'direction': cardinal_dir
+                }
 
-        else:
-            logging.warning("Failed to fetch wind data")
-            return "N/A"
+            else:
+                logging.warning("Failed to fetch wind data")
+                return "N/A"
+
+            wind_text = f"{wind_data['speed']}g{wind_data['gust']} {wind_data['direction']}"
+            if wind_data['speed'] >= 11:
+                #self.update_cell(grid_layout, (1, 1), 'Wind', wind_text, background_color=QColor(0, 255, 0))  # Green color
+                return wind_text, 'green'
+            else:
+                return wind_text, None
+                #self.update_cell(grid_layout, (1, 1), 'Wind', wind_text)
+
+        fetch_wind()
 
     def fetch_tidetimes(self):
         logging.info("Fetching tide times data")
@@ -290,27 +310,38 @@ class MainWindow(QWidget):
             return "No upcoming tide events"
 
     def fetch_tide(self):
-        logging.info(f"Fetching tide data at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        url = "https://api.tidesandcurrents.noaa.gov/api/prod//datagetter?&station=9410230&range=1&units=english&datum=MLLW&product=water_level&time_zone=LST_LDT&format=json&application=NOS.COOPS.TAC.COOPSMAP"
-        response = requests.get(url)
-        data = response.json()
+        @self.datacell((1, 0), "Tides")
+        def fetch_tide():
+            logging.info(f"Fetching tide data at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            url = "https://api.tidesandcurrents.noaa.gov/api/prod//datagetter?&station=9410230&range=1&units=english&datum=MLLW&product=water_level&time_zone=LST_LDT&format=json&application=NOS.COOPS.TAC.COOPSMAP"
+            response = requests.get(url)
+            data = response.json()
 
-        if 'data' in data and len(data['data']) >= 2:
-            last_two_values = data['data'][-2:]
-            last_value = float(last_two_values[-1]['v'])
-            second_last_value = float(last_two_values[-2]['v'])
+            if 'data' in data and len(data['data']) >= 2:
+                last_two_values = data['data'][-2:]
+                last_value = float(last_two_values[-1]['v'])
+                second_last_value = float(last_two_values[-2]['v'])
 
-            trend = "rising" if last_value > second_last_value else "falling"
-            logging.info(f"Tide data: Value: {last_value:.1f}Ft, Trend: {trend}")
-            return {
-                'value': last_value,
-                'trend': trend
-            }
-        else:
-            return {
-                'value': 'N/A',
-                'trend': 'N/A'
-            }
+                trend = "rising" if last_value > second_last_value else "falling"
+                logging.info(f"Tide data: Value: {last_value:.1f}Ft, Trend: {trend}")
+                tide_data = {
+                    'value': last_value,
+                    'trend': trend
+                }
+            else:
+                tide_data = {
+                    'value': 'N/A',
+                    'trend': 'N/A'
+                }
+
+            tide_value = tide_data['value']
+            tide_trend = tide_data['trend']
+            tide_text = f"{tide_value:.1f}Ft {'v' if tide_trend == 'falling' else '^'}"
+            tide_times_data = self.fetch_tidetimes()
+            tide_text += f"\n{tide_times_data}"
+            #self.update_cell(grid_layout, (1, 0), 'Tide', tide_text)
+            return tide_text, None
+        fetch_tide()
 
     def fetch_sunriseset(self):
 
@@ -368,20 +399,9 @@ class MainWindow(QWidget):
 
         self.fetch_surf()
 
-        tide_data = self.fetch_tide()
-        tide_value = tide_data['value']
-        tide_trend = tide_data['trend']
-        tide_text = f"{tide_value:.1f}Ft {'v' if tide_trend == 'falling' else '^'}"
-        tide_times_data = self.fetch_tidetimes()
-        tide_text += f"\n{tide_times_data}"
-        self.update_cell(grid_layout, (1, 0), 'Tide', tide_text)
+        self.fetch_tide()
 
-        wind_data = self.fetch_wind()
-        wind_text = f"{wind_data['speed']}g{wind_data['gust']} {wind_data['direction']}"
-        if wind_data['speed'] >= 11:
-            self.update_cell(grid_layout, (1, 1), 'Wind', wind_text, background_color=QColor(0, 255, 0))  # Green color
-        else:
-            self.update_cell(grid_layout, (1, 1), 'Wind', wind_text)
+        self.fetch_wind()
 
         self.last_update_time = datetime.now()  # Update last_update_time at the end
 
