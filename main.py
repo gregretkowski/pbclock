@@ -9,9 +9,19 @@ import threading
 import time
 import logging
 
+from astral import LocationInfo
+from astral.sun import sun
+import pytz
+from datetime import datetime
+
+import dateparser
+
 from datetime import datetime, timedelta
 
+from functools import wraps
+
 class MainWindow(QWidget):
+
     def __init__(self):
         self.last_update_time = None
         super().__init__()
@@ -44,6 +54,43 @@ class MainWindow(QWidget):
             label.setStyleSheet("border: 1px solid black;")
         grid_layout.addWidget(label, *position)
 
+    def datacell(self, position, title):
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                #print(f"Decorator arguments: {arg1}, {arg2}")
+                print("Before the function call")
+                grid_layout = self.layout()
+                try:
+                    result, color = func(*args, **kwargs)
+                    self.update_cell(grid_layout, position, title, result, color)
+
+                except Exception as e:
+                    logging.error(f"Error in {title}: {e}", exc_info=True)
+                    self.update_cell(grid_layout, position, title, "Error", background_color=None)  # Green color
+                    print("After the function call")
+
+            return wrapper
+        return decorator
+
+
+    def datacell_old(self, position, title):
+        def decorator(func):
+            def wrapper(*args, **kwargs):
+                #print(f"Decorator arguments: {arg1}, {arg2}")
+                print("Before the function call")
+                grid_layout = self.layout()
+                try:
+                    result, color = func(*args, **kwargs)
+                    self.update_cell(grid_layout, position, title, result, color)
+
+                except Exception as e:
+                    logging.error(f"Error in {title}: {e}", exc_info=True)
+                    self.update_cell(grid_layout, position, title, "Error", background_color=QColor(0, 255, 0))  # Green color
+                    print("After the function call")
+                return result
+            return wrapper
+        return decorator
+
     def initUI(self):
         self.setGeometry(100, 100, 480, 320)
         self.setWindowTitle("PyQt5 Grid")
@@ -73,23 +120,61 @@ class MainWindow(QWidget):
         for position, text in zip(positions, cell_texts):
             self.update_cell(grid_layout, position,"", text)
 
+    #@@MainWindow.datacell( (0, 0), "Launches")
     def fetch_launches(self):
-        logging.info(f"Fetching launches at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        url = 'https://nextspaceflight.com/launches/nsf_launches/10/'
-        response = requests.get(url)
-        data = response.json()
-        filtered_data = []
-        current_time = datetime.now()
-        for item in data:
-            if any(loc in item['location'].lower() for loc in ['vandenberg', 'chica']):
-                net_time = datetime.strptime(item['net'], '%Y-%m-%dT%H:%M:%SZ')
-                time_diff = net_time - current_time
-                days = time_diff.days
-                hours = time_diff.seconds // 3600
-                time_diff_str = f"{days}D {hours}H"
-                filtered_data.append({'name': item['name'], 'net': item['net'], 'time_diff': time_diff_str})
-        logging.info(f"Fetched {len(filtered_data)} launches")
-        return filtered_data
+        @self.datacell((0, 0), "Launches")
+        def fetch_launches():
+
+            logging.info(f"Fetching launches at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            url = 'https://nextspaceflight.com/launches/nsf_launches/10/'
+            response = requests.get(url)
+            data = response.json()
+            filtered_data = []
+            tz = pytz.timezone('America/Los_Angeles')
+            #now = datetime.now(tz)
+            current_time = datetime.now(tz)
+            for item in data:
+                if any(loc in item['location'].lower() for loc in ['vandenberg', 'chica']):
+                    #net_time = datetime.strptime(item['net'], '%Y-%m-%dT%H:%M:%SZ')
+                    net_time = dateparser.parse(item['net'])
+                    # 2024-09-06 13:38:13,562 - ERROR - Error in Launches: time data '2024-09-30T23:59:59.000059Z' does not match format '%Y-%m-%dT%H:%M:%SZ'
+
+
+
+                    time_diff = net_time - current_time
+                    days = time_diff.days
+                    hours = time_diff.seconds // 3600
+                    time_diff_str = f"{days}D {hours}H"
+                    filtered_data.append({'name': item['name'], 'net': item['net'], 'time_diff': time_diff_str})
+            logging.info(f"Fetched {len(filtered_data)} launches")
+            #return filtered_data
+
+            launches = filtered_data
+
+            if launches:
+                next_launch = launches[0]
+                launch_text = f"{next_launch['name']}\n{next_launch['time_diff']}"
+                days, hours = next_launch['time_diff'].split('D ')
+                hours = int(hours[:-1])  # Remove the 'H' and convert to int
+                if int(days) == 0 and hours < 20:
+                    #self.update_cell(grid_layout, (0, 0), 'Launches', launch_text, background_color=QColor(0, 255, 0))  # Green color
+                    return launch_text, QColor(0, 255, 0)
+                else:
+                    #self.update_cell(grid_layout, (0, 0), 'Launches', launch_text)
+                    return launch_text, None
+            else:
+                #self.update_cell(grid_layout, (0, 0), 'Launches', 'None')
+                return "None", None
+
+
+                #return "Got Stuff", QColor(0, 255, 0)
+
+
+            #raise Exception("Error in fetch_launches")
+            #return "Got Stuff", None
+        fetch_launches()
+        return
+
 
     def fetch_surf(self):
         url = 'https://surfcaptain.com/forecast/pacific-beach-california'
@@ -215,10 +300,7 @@ class MainWindow(QWidget):
             }
 
     def fetch_sunriseset(self):
-        from astral import LocationInfo
-        from astral.sun import sun
-        import pytz
-        from datetime import datetime
+
 
         city = LocationInfo("San Diego", "California", "America/Los_Angeles", 32.7157, -117.1611)
         s = sun(city.observer, date=datetime.now().date(), tzinfo=city.timezone)
@@ -257,6 +339,7 @@ class MainWindow(QWidget):
         grid_layout = self.layout()
 
         launches = self.fetch_launches()
+        '''
         if launches:
             next_launch = launches[0]
             launch_text = f"{next_launch['name']}\n{next_launch['time_diff']}"
@@ -268,22 +351,23 @@ class MainWindow(QWidget):
                 self.update_cell(grid_layout, (0, 0), 'Launches', launch_text)
         else:
             self.update_cell(grid_layout, (0, 0), 'Launches', 'None')
-
-        surf_data = self.fetch_surf()
-        surf_text = surf_data['surf_forecast']
-        surf_height = float(surf_text.split('FT')[0]) if surf_text != 'N/A' else 0
-        if surf_height >= 5:
-            self.update_cell(grid_layout, (0, 1), 'Surf', surf_text, background_color=QColor(255, 0, 0))  # Red color
-        elif surf_height >= 3:
-            self.update_cell(grid_layout, (0, 1), 'Surf', surf_text, background_color=QColor(0, 255, 0))  # Green color
-        else:
-            self.update_cell(grid_layout, (0, 1), 'Surf', surf_text)
+        '''
 
         sun_data = self.fetch_sunriseset()
         event_symbol = '^' if sun_data['event'] == 'sunrise' else 'v'
         sun_time = sun_data['time'].split()[1][:5]  # Extract HH:MM part
         sun_text = f"{sun_time} {event_symbol}"
-        self.update_cell(grid_layout, (0, 2), 'Sunrise/set', sun_text)
+        self.update_cell(grid_layout, (0, 1), 'Sunrise/set', sun_text)
+
+        surf_data = self.fetch_surf()
+        surf_text = surf_data['surf_forecast']
+        surf_height = float(surf_text.split('FT')[0]) if surf_text != 'N/A' else 0
+        if surf_height >= 5:
+            self.update_cell(grid_layout, (0, 2), 'Surf', surf_text, background_color=QColor(255, 0, 0))  # Red color
+        elif surf_height >= 3:
+            self.update_cell(grid_layout, (0, 2), 'Surf', surf_text, background_color=QColor(0, 255, 0))  # Green color
+        else:
+            self.update_cell(grid_layout, (0, 2), 'Surf', surf_text)
 
         tide_data = self.fetch_tide()
         tide_value = tide_data['value']
