@@ -22,6 +22,9 @@ from functools import wraps
 
 class MainWindow(QWidget):
 
+    _ui_width = 480
+    _ui_height = 320
+
     def __init__(self):
         self.last_update_time = None
         super().__init__()
@@ -52,7 +55,10 @@ class MainWindow(QWidget):
             label.setStyleSheet(f"background-color: {background_color.name()}; border: 1px solid black;")
         else:
             label.setStyleSheet("border: 1px solid black;")
+        label.setFixedWidth(int(self._ui_width / 3))
+        label.setFixedHeight(int(self._ui_height / 2))
         grid_layout.addWidget(label, *position)
+
 
     def datacell(self, position, title):
         def decorator(func):
@@ -72,27 +78,11 @@ class MainWindow(QWidget):
             return wrapper
         return decorator
 
-
-    def datacell_old(self, position, title):
-        def decorator(func):
-            def wrapper(*args, **kwargs):
-                #print(f"Decorator arguments: {arg1}, {arg2}")
-                print("Before the function call")
-                grid_layout = self.layout()
-                try:
-                    result, color = func(*args, **kwargs)
-                    self.update_cell(grid_layout, position, title, result, color)
-
-                except Exception as e:
-                    logging.error(f"Error in {title}: {e}", exc_info=True)
-                    self.update_cell(grid_layout, position, title, "Error", background_color=QColor(0, 255, 0))  # Green color
-                    print("After the function call")
-                return result
-            return wrapper
-        return decorator
-
     def initUI(self):
-        self.setGeometry(100, 100, 480, 320)
+        self.setGeometry(100, 100, self._ui_width, self._ui_height)
+        #self.setFixedSize(480, 320)
+        #self.setMinimumSize(480, 320)
+        #self.setMaximumSize(480, 320)
         self.setWindowTitle("PyQt5 Grid")
 
         # Set background color to light blue
@@ -101,6 +91,9 @@ class MainWindow(QWidget):
         self.setPalette(palette)
 
         grid_layout = QGridLayout()
+        #grid_layout.setSizeConstraint(QLayout.SetFixedSize)
+        #grid_layout.setAlignment(Qt.AlignTop)
+        #grid_layout.setSpacing(0)
         self.setLayout(grid_layout)
 
         titles = [
@@ -145,7 +138,8 @@ class MainWindow(QWidget):
                     days = time_diff.days
                     hours = time_diff.seconds // 3600
                     time_diff_str = f"{days}D {hours}H"
-                    filtered_data.append({'name': item['name'], 'net': item['net'], 'time_diff': time_diff_str})
+                    #filtered_data.append({'name': item['name'], 'net': item['net'], 'time_diff': time_diff_str})
+                    filtered_data.append({'name': item['name'], 'net': net_time, 'time_diff': time_diff_str})
             logging.info(f"Fetched {len(filtered_data)} launches")
             #return filtered_data
 
@@ -156,7 +150,13 @@ class MainWindow(QWidget):
                 launch_text = f"{next_launch['name']}\n{next_launch['time_diff']}"
                 days, hours = next_launch['time_diff'].split('D ')
                 hours = int(hours[:-1])  # Remove the 'H' and convert to int
-                if int(days) == 0 and hours < 20:
+                if int(days) == 0 and hours < 12:
+                    local_time = next_launch['net'].astimezone(tz).strftime("%I:%M")
+                    launch_text = f"{next_launch['name']}\n{local_time}"
+
+                    return launch_text, QColor(0, 255, 0)
+
+                elif int(days) == 0 and hours < 20:
                     #self.update_cell(grid_layout, (0, 0), 'Launches', launch_text, background_color=QColor(0, 255, 0))  # Green color
                     return launch_text, QColor(0, 255, 0)
                 else:
@@ -177,22 +177,35 @@ class MainWindow(QWidget):
 
 
     def fetch_surf(self):
-        url = 'https://surfcaptain.com/forecast/pacific-beach-california'
-        response = requests.get(url)
-        soup = BeautifulSoup(response.content, 'html.parser')
 
-        # Example parsing logic (you need to adjust this based on the actual HTML structure)
-        surf_forecast = soup.select_one('#fcst-current-title')  # Select the <h1> element with id 'fcst-current-title'
-        import re
-        surf_forecast_text = surf_forecast.text if surf_forecast else 'N/A'  # Extract the text content
-        logging.info(f"Surf forecast text: {surf_forecast_text}")
-        match = re.search(r'(\d+)', surf_forecast_text)
-        surf_forecast_formatted = f"{match.group(1)}FT" if match else 'N/A'  # Format the extracted value and unit
-        logging.info(f"Formatted surf forecast: {surf_forecast_formatted}")
+        @self.datacell((0, 2), "Surf")
+        def fetch_surf():
 
-        return {
-            'surf_forecast': surf_forecast_formatted
-        }
+            url = 'https://surfcaptain.com/forecast/pacific-beach-california'
+            response = requests.get(url)
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Example parsing logic (you need to adjust this based on the actual HTML structure)
+            surf_forecast = soup.select_one('#fcst-current-title')  # Select the <h1> element with id 'fcst-current-title'
+            import re
+            surf_forecast_text = surf_forecast.text if surf_forecast else 'N/A'  # Extract the text content
+            logging.info(f"Surf forecast text: {surf_forecast_text}")
+            match = re.search(r'(\d+)', surf_forecast_text)
+            surf_forecast_formatted = f"{match.group(1)}FT" if match else 'N/A'  # Format the extracted value and unit
+            logging.info(f"Formatted surf forecast: {surf_forecast_formatted}")
+
+            surf_text = surf_forecast_formatted
+            surf_height = float(surf_text.split('FT')[0]) if surf_text != 'N/A' else 0
+            if surf_height >= 5:
+                return surf_text, QColor(255, 0, 0)  # Red color
+                #self.update_cell(grid_layout, (0, 2), 'Surf', surf_text, background_color=QColor(255, 0, 0))  # Red color
+            elif surf_height >= 3:
+                return surf_text, QColor(0, 255, 0)  # Green color
+                #self.update_cell(grid_layout, (0, 2), 'Surf', surf_text, background_color=QColor(0, 255, 0))  # Green color
+            else:
+                #self.update_cell(grid_layout, (0, 2), 'Surf', surf_text)
+                return surf_text, None
+        fetch_surf()
 
     def fetch_wind(self):
         logging.info(f"Fetching wind data at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -301,34 +314,44 @@ class MainWindow(QWidget):
 
     def fetch_sunriseset(self):
 
+        @self.datacell((0, 1), "Sunrise/Set")
+        def fetch_sunriseset():
 
-        city = LocationInfo("San Diego", "California", "America/Los_Angeles", 32.7157, -117.1611)
-        s = sun(city.observer, date=datetime.now().date(), tzinfo=city.timezone)
+            city = LocationInfo("San Diego", "California", "America/Los_Angeles", 32.7157, -117.1611)
+            s = sun(city.observer, date=datetime.now().date(), tzinfo=city.timezone)
 
-        current_time = datetime.now(tz=pytz.timezone(city.timezone))
-        logging.info(f"Current time: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        next_sunrise = s['sunrise']
-        next_sunset = s['sunset']
+            current_time = datetime.now(tz=pytz.timezone(city.timezone))
+            logging.info(f"Current time: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            next_sunrise = s['sunrise']
+            next_sunset = s['sunset']
 
-        if current_time > next_sunset:
-            # If current time is after sunset, calculate sunrise for the next day
-            next_day = datetime.now().date() + timedelta(days=1)
-            s_next_day = sun(city.observer, date=next_day, tzinfo=city.timezone)
-            next_event = 'sunrise'
-            next_event_time = s_next_day['sunrise']
-        elif next_sunrise > current_time and (next_sunset < current_time or next_sunrise < next_sunset):
-            next_event = 'sunrise'
-            next_event_time = next_sunrise
-        else:
-            next_event = 'sunset'
-            next_event_time = next_sunset
+            if current_time > next_sunset:
+                # If current time is after sunset, calculate sunrise for the next day
+                next_day = datetime.now().date() + timedelta(days=1)
+                s_next_day = sun(city.observer, date=next_day, tzinfo=city.timezone)
+                next_event = 'sunrise'
+                next_event_time = s_next_day['sunrise']
+            elif next_sunrise > current_time and (next_sunset < current_time or next_sunrise < next_sunset):
+                next_event = 'sunrise'
+                next_event_time = next_sunrise
+            else:
+                next_event = 'sunset'
+                next_event_time = next_sunset
 
-        logging.info(f"Next event: {next_event}, Time: {next_event_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            logging.info(f"Next event: {next_event}, Time: {next_event_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        return {
-            'event': next_event,
-            'time': next_event_time.strftime('%Y-%m-%d %H:%M:%S')
-        }
+            sun_data = {
+                'event': next_event,
+                'time': next_event_time.strftime('%Y-%m-%d %H:%M:%S')
+            }
+            #sun_data = self.fetch_sunriseset()
+            event_symbol = '^' if sun_data['event'] == 'sunrise' else 'v'
+            sun_time = sun_data['time'].split()[1][:5]  # Extract HH:MM part
+            sun_text = f"{sun_time} {event_symbol}"
+            return sun_text, None
+            #self.update_cell(grid_layout, (0, 1), 'Sunrise/set', sun_text)
+
+        fetch_sunriseset()
 
     def fetch_current_time(self):
         return datetime.now().strftime('%I:%M:%S')
@@ -336,38 +359,14 @@ class MainWindow(QWidget):
     def update_data(self):
         # Move updating last_update_time to the end of the method
 
+        # TODO: remove this once everything is converted.
         grid_layout = self.layout()
 
-        launches = self.fetch_launches()
-        '''
-        if launches:
-            next_launch = launches[0]
-            launch_text = f"{next_launch['name']}\n{next_launch['time_diff']}"
-            days, hours = next_launch['time_diff'].split('D ')
-            hours = int(hours[:-1])  # Remove the 'H' and convert to int
-            if int(days) == 0 and hours < 20:
-                self.update_cell(grid_layout, (0, 0), 'Launches', launch_text, background_color=QColor(0, 255, 0))  # Green color
-            else:
-                self.update_cell(grid_layout, (0, 0), 'Launches', launch_text)
-        else:
-            self.update_cell(grid_layout, (0, 0), 'Launches', 'None')
-        '''
+        self.fetch_launches()
 
-        sun_data = self.fetch_sunriseset()
-        event_symbol = '^' if sun_data['event'] == 'sunrise' else 'v'
-        sun_time = sun_data['time'].split()[1][:5]  # Extract HH:MM part
-        sun_text = f"{sun_time} {event_symbol}"
-        self.update_cell(grid_layout, (0, 1), 'Sunrise/set', sun_text)
+        self.fetch_sunriseset()
 
-        surf_data = self.fetch_surf()
-        surf_text = surf_data['surf_forecast']
-        surf_height = float(surf_text.split('FT')[0]) if surf_text != 'N/A' else 0
-        if surf_height >= 5:
-            self.update_cell(grid_layout, (0, 2), 'Surf', surf_text, background_color=QColor(255, 0, 0))  # Red color
-        elif surf_height >= 3:
-            self.update_cell(grid_layout, (0, 2), 'Surf', surf_text, background_color=QColor(0, 255, 0))  # Green color
-        else:
-            self.update_cell(grid_layout, (0, 2), 'Surf', surf_text)
+        self.fetch_surf()
 
         tide_data = self.fetch_tide()
         tide_value = tide_data['value']
@@ -387,18 +386,24 @@ class MainWindow(QWidget):
         self.last_update_time = datetime.now()  # Update last_update_time at the end
 
     def update_time_cell(self):
-        grid_layout = self.layout()
-        current_time = self.fetch_current_time()
-        if self.last_update_time:
-            elapsed_time = datetime.now() - self.last_update_time
-            elapsed_seconds = int(elapsed_time.total_seconds())
-            hours, remainder = divmod(elapsed_seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            elapsed_time_str = f"Upd -{minutes}M"
-        else:
-            elapsed_time_str = "N/A"
-        clock_text = f"{current_time}\n{elapsed_time_str}"
-        self.update_cell(grid_layout, (1, 2), 'Clock', clock_text)
+        try:
+            grid_layout = self.layout()
+            current_time = self.fetch_current_time()
+            if self.last_update_time:
+                elapsed_time = datetime.now() - self.last_update_time
+                elapsed_seconds = int(elapsed_time.total_seconds())
+                hours, remainder = divmod(elapsed_seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                elapsed_time_str = f"Upd -{minutes}M"
+            else:
+                elapsed_time_str = "N/A"
+            clock_text = f"{current_time}\n{elapsed_time_str}"
+            self.update_cell(grid_layout, (1, 2), 'Clock', clock_text)
+
+        except KeyboardInterrupt:
+            print("Interrupted!")
+            sys.exit(app.exec_())
+            sys.exit(0)
 
 if __name__ == '__main__':
 
