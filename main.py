@@ -30,6 +30,8 @@ class MainWindow(QWidget):
     _color_red = QColor(255, 0, 0)
     _color_orange = QColor(255, 128, 0)
 
+    _fudge = 12
+
     def __init__(self):
         self.last_update_time = None
         super().__init__()
@@ -54,7 +56,7 @@ class MainWindow(QWidget):
         label.setAlignment(Qt.AlignCenter)
         font = label.font()
         font.setBold(True)
-        font.setPointSize(font.pointSize() * 2)  # Double the font size
+        font.setPointSize(int(font.pointSize() * 1.5))  # Double the font size
         label.setFont(font)
         if isinstance(background_color, str):
             background_color = QColor(background_color)
@@ -63,8 +65,8 @@ class MainWindow(QWidget):
             label.setStyleSheet(f"background-color: {background_color.name()}; border: 1px solid black;")
         else:
             label.setStyleSheet("border: 1px solid black;")
-        label.setFixedWidth(int(self._ui_width / 3))
-        label.setFixedHeight(int(self._ui_height / 2))
+        label.setFixedWidth(int(self._ui_width / 3) - self._fudge)
+        label.setFixedHeight(int(self._ui_height / 2) - self._fudge)
         grid_layout.addWidget(label, *position)
 
 
@@ -190,6 +192,7 @@ class MainWindow(QWidget):
         def fetch_surf():
 
             url = 'https://surfcaptain.com/forecast/pacific-beach-california'
+            #url = 'https://surfcaptain.com/forecast/nags-head-north-carolina'
             response = requests.get(url)
             soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -198,12 +201,16 @@ class MainWindow(QWidget):
             import re
             surf_forecast_text = surf_forecast.text if surf_forecast else 'N/A'  # Extract the text content
             logging.info(f"Surf forecast text: {surf_forecast_text}")
-            match = re.search(r'(\d+)', surf_forecast_text)
+            match = re.search(r'([\d\-\+]+)', surf_forecast_text)
             surf_forecast_formatted = f"{match.group(1)}FT" if match else 'N/A'  # Format the extracted value and unit
             logging.info(f"Formatted surf forecast: {surf_forecast_formatted}")
 
             surf_text = surf_forecast_formatted
-            surf_height = float(surf_text.split('FT')[0]) if surf_text != 'N/A' else 0
+
+            #surf_text = '2FT'
+            #import re
+            match = re.search(r'(\d+)(?:\+\d*)?FT$', surf_text)
+            surf_height = int(match.group(1)) if match else 0
             if surf_height >= 5:
                 return surf_text, QColor(255, 0, 0)  # Red color
                 #self.update_cell(grid_layout, (0, 2), 'Surf', surf_text, background_color=QColor(255, 0, 0))  # Red color
@@ -248,7 +255,7 @@ class MainWindow(QWidget):
             wind_text = f"{wind_data['speed']}g{wind_data['gust']} {wind_data['direction']}"
             if wind_data['speed'] >= 11:
                 #self.update_cell(grid_layout, (1, 1), 'Wind', wind_text, background_color=QColor(0, 255, 0))  # Green color
-                return wind_text, 'green'
+                return wind_text, self._color_green
             else:
                 return wind_text, None
                 #self.update_cell(grid_layout, (1, 1), 'Wind', wind_text)
