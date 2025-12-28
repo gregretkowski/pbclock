@@ -178,9 +178,21 @@ class MainWindow(QWidget):
         match = re.search(r'(\d+)(?:\+\d*)?FT$', surf_text)
         surf_height = int(match.group(1)) if match else 0
 
+        # Extract water temperature
+        water_temp = 'N/A'
+        water_temp_elem = soup.select_one('.current-data-desc')
+        if water_temp_elem:
+            # Get the text content and extract the temperature (e.g., "64°")
+            temp_text = water_temp_elem.get_text(strip=True)
+            temp_match = re.search(r'(\d+)°', temp_text)
+            if temp_match:
+                water_temp = f"{temp_match.group(1)}°"
+                logging.info(f"Water temperature: {water_temp}")
+
         return {
             'text': surf_text,
-            'height': surf_height
+            'height': surf_height,
+            'water_temp': water_temp
         }
 
     def fetch_wind(self):
@@ -420,13 +432,17 @@ class MainWindow(QWidget):
 
         surf_text = surf['text']
         surf_height = surf['height']
+        water_temp = surf.get('water_temp', 'N/A')
+
+        # Combine surf text with water temperature
+        display_text = f"{surf_text}\n{water_temp}"
 
         if surf_height >= 5:
-            return surf_text, self._color_red
+            return display_text, self._color_red
         elif surf_height >= 3:
-            return surf_text, self._color_green
+            return display_text, self._color_green
         else:
-            return surf_text, None
+            return display_text, None
 
     def render_wind_cell(self, data_store):
         """Render wind cell using data from DataStore"""
