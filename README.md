@@ -1,8 +1,8 @@
 # TODO
 
-- [ ] get it working again
+- [x] get it working again
 - [ ] deployment via github autopull
-- [ ] modularize data/display (see spec)
+- [x] modularize data/display (see spec)
 
 # data/display spec
 enhancement to data/display. have one routine grab/scrape all the data. another interacts with the display to display the blocks. maybe a third which handles math
@@ -14,6 +14,18 @@ fetch launches; fetch sunset; (and wx); if a launch is within an hour of sunset 
 ### New notes on dev.
 
    python -m venv .venv
+   # any changes to requrements.txt
+   uv pip install -r requirements.txt
+   python main.py
+
+## Testing
+
+Run tests with:
+```bash
+python -m unittest test_main -v
+```
+
+The tests use mocking to avoid making actual HTTP requests. All external API calls and web scraping are mocked, so tests run quickly and don't require network access.
 
 
 # Notes on dev
