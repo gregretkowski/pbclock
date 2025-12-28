@@ -45,6 +45,8 @@ class MainWindow(QWidget):
             'sunriseset': None,
             'last_update': None
         }
+        self.overlay = None
+        self.overlay_visible = False
         self.initUI()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_data)
@@ -57,7 +59,7 @@ class MainWindow(QWidget):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-    def update_cell(self, grid_layout, position, title, text, background_color=None):
+    def update_cell(self, grid_layout, position, title, text, background_color=None, clickable=False, click_callback=None):
         # Remove existing widget at the position if any
         if grid_layout.itemAtPosition(*position):
             existing_widget = grid_layout.itemAtPosition(*position).widget()
@@ -77,6 +79,11 @@ class MainWindow(QWidget):
             label.setStyleSheet("border: 1px solid black;")
         label.setFixedWidth(int(self._ui_width / 3) - self._fudge)
         label.setFixedHeight(int(self._ui_height / 2) - self._fudge)
+
+        if clickable and click_callback:
+            label.mousePressEvent = lambda e: click_callback()
+            label.setCursor(Qt.PointingHandCursor)
+
         grid_layout.addWidget(label, *position)
 
 
@@ -275,7 +282,7 @@ class MainWindow(QWidget):
             next_type = next_type.strip()
             return {
                 'time': next_time_dt,
-                'time_str': next_time_dt.strftime('%I:%M'),
+                'time_str': next_time_dt.strftime('%H:%M'),
                 'type': next_type
             }
         else:
@@ -338,7 +345,7 @@ class MainWindow(QWidget):
         }
 
     def fetch_current_time(self):
-        return datetime.now().strftime('%I:%M:%S')
+        return datetime.now().strftime('%H:%M:%S')
 
     def update_all_data(self):
         """Fetch all data sources and store in DataStore"""
@@ -399,7 +406,7 @@ class MainWindow(QWidget):
         # Check if launch is within 1 hour of sunrise or sunset
         color = None
         if days == 0 and hours < 12:
-            local_time = next_launch['net'].astimezone(tz).strftime("%I:%M")
+            local_time = next_launch['net'].astimezone(tz).strftime("%H:%M")
             launch_text = f"{next_launch['name']}\n{local_time}"
 
             # Check if launch is within 1 hour of sunrise/sunset
@@ -496,6 +503,10 @@ class MainWindow(QWidget):
 
     def update_all_cells(self):
         """Update all cells using render functions"""
+        # Don't update cells if overlay is visible
+        if self.overlay_visible:
+            return
+
         grid_layout = self.layout()
 
         try:
@@ -538,7 +549,60 @@ class MainWindow(QWidget):
         self.update_all_data()  # Fetch all data into DataStore
         self.update_all_cells()  # Update all cells using DataStore
 
+    def show_overlay(self):
+        """Show the overlay dialog with additional details"""
+        if self.overlay is None:
+            self.create_overlay()
+        self.overlay_visible = True
+        self.overlay.raise_()
+        self.overlay.show()
+
+    def hide_overlay(self):
+        """Hide the overlay dialog"""
+        if self.overlay:
+            self.overlay_visible = False
+            self.overlay.hide()
+
+    def create_overlay(self):
+        """Create the overlay widget"""
+        self.overlay = QWidget(self)
+        self.overlay.setGeometry(0, 0, self._ui_width, self._ui_height)
+
+        # Semi-transparent background
+        self.overlay.setStyleSheet("background-color: rgba(0, 0, 0, 128);")
+
+        # Create content box (white box that wraps both text and X button)
+        content_box = QWidget(self.overlay)
+        content_box.setStyleSheet("background-color: white; border: 2px solid black;")
+        content_box_width = int(self._ui_width * 0.8)
+        content_box_height = int(self._ui_height * 0.6)
+        content_box_x = (self._ui_width - content_box_width) // 2
+        content_box_y = (self._ui_height - content_box_height) // 2
+        content_box.setGeometry(content_box_x, content_box_y, content_box_width, content_box_height)
+
+        # Create "Additional Details" label (no box around just the text)
+        details_label = QLabel("Additional Details", content_box)
+        details_label.setAlignment(Qt.AlignCenter)
+        font = details_label.font()
+        font.setBold(True)
+        font.setPointSize(int(font.pointSize() * 1.5))
+        details_label.setFont(font)
+        details_label.setStyleSheet("background-color: transparent;")
+        details_label.setGeometry(10, 10, content_box_width - 50, 40)
+
+        # Create close button (X) in upper right corner of content box
+        close_button = QPushButton("×", content_box)
+        close_button.setStyleSheet("background-color: #ff4444; color: white; border: 1px solid black; font-size: 20px; font-weight: bold;")
+        close_button.setGeometry(content_box_width - 40, 5, 35, 35)
+        close_button.clicked.connect(self.hide_overlay)
+
+        self.overlay.hide()
+
     def update_time_cell(self):
+        # Don't update clock cell if overlay is visible
+        if self.overlay_visible:
+            return
+
         try:
             grid_layout = self.layout()
             current_time = self.fetch_current_time()
@@ -551,7 +615,7 @@ class MainWindow(QWidget):
             else:
                 elapsed_time_str = "N/A"
             clock_text = f"{current_time}\n{elapsed_time_str}"
-            self.update_cell(grid_layout, (1, 2), 'Clock', clock_text)
+            self.update_cell(grid_layout, (1, 2), 'Clock', clock_text, clickable=True, click_callback=self.show_overlay)
 
         except KeyboardInterrupt:
             print("Interrupted!")
