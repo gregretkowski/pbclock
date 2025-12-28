@@ -91,9 +91,22 @@ class TestMainWindow(unittest.TestCase):
 
         # Mock BeautifulSoup
         mock_soup = Mock()
-        mock_element = Mock()
-        mock_element.text = 'Pacific Beach 3-5FT'
-        mock_soup.select_one.return_value = mock_element
+        # Mock surf forecast element
+        mock_surf_element = Mock()
+        mock_surf_element.text = 'Pacific Beach 3-5FT'
+        # Mock water temperature element
+        mock_temp_element = Mock()
+        mock_temp_element.get_text.return_value = 'Water temperature: 64°'
+
+        # Configure select_one to return different elements based on selector
+        def select_one_side_effect(selector):
+            if selector == '#fcst-current-title':
+                return mock_surf_element
+            elif selector == '.current-data-desc':
+                return mock_temp_element
+            return None
+
+        mock_soup.select_one.side_effect = select_one_side_effect
         mock_bs.return_value = mock_soup
 
         # Call the function
@@ -103,8 +116,47 @@ class TestMainWindow(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIn('text', result)
         self.assertIn('height', result)
+        self.assertIn('water_temp', result)
         # The regex r'(\d+)(?:\+\d*)?FT$' matches "5FT" from "3-5FT", extracting 5
         self.assertEqual(result['height'], 5)
+        self.assertEqual(result['water_temp'], '64°')
+
+    @patch('main.requests.get')
+    @patch('main.BeautifulSoup')
+    def test_fetch_surf_no_water_temp(self, mock_bs, mock_get):
+        """Test fetch_surf function when water temperature is not available"""
+        # Mock response
+        mock_response = Mock()
+        mock_response.content = b'<html></html>'
+        mock_get.return_value = mock_response
+
+        # Mock BeautifulSoup
+        mock_soup = Mock()
+        # Mock surf forecast element
+        mock_surf_element = Mock()
+        mock_surf_element.text = 'Pacific Beach 3-5FT'
+
+        # Configure select_one to return surf element but None for water temp
+        def select_one_side_effect(selector):
+            if selector == '#fcst-current-title':
+                return mock_surf_element
+            elif selector == '.current-data-desc':
+                return None
+            return None
+
+        mock_soup.select_one.side_effect = select_one_side_effect
+        mock_bs.return_value = mock_soup
+
+        # Call the function
+        result = self.window.fetch_surf()
+
+        # Assertions
+        self.assertIsNotNone(result)
+        self.assertIn('text', result)
+        self.assertIn('height', result)
+        self.assertIn('water_temp', result)
+        self.assertEqual(result['height'], 5)
+        self.assertEqual(result['water_temp'], 'N/A')
 
     @patch('main.requests.get')
     def test_fetch_wind(self, mock_get):
@@ -349,11 +401,12 @@ class TestMainWindow(unittest.TestCase):
         data_store = {
             'surf': {
                 'text': '5FT',
-                'height': 5
+                'height': 5,
+                'water_temp': '64°'
             }
         }
         text, color = self.window.render_surf_cell(data_store)
-        self.assertEqual(text, '5FT')
+        self.assertEqual(text, '5FT\n64°')
         self.assertEqual(color, self.window._color_red)
 
     def test_render_surf_cell_medium(self):
@@ -361,11 +414,12 @@ class TestMainWindow(unittest.TestCase):
         data_store = {
             'surf': {
                 'text': '3FT',
-                'height': 3
+                'height': 3,
+                'water_temp': '64°'
             }
         }
         text, color = self.window.render_surf_cell(data_store)
-        self.assertEqual(text, '3FT')
+        self.assertEqual(text, '3FT\n64°')
         self.assertEqual(color, self.window._color_green)
 
     def test_render_surf_cell_low(self):
@@ -373,12 +427,26 @@ class TestMainWindow(unittest.TestCase):
         data_store = {
             'surf': {
                 'text': '2FT',
-                'height': 2
+                'height': 2,
+                'water_temp': '64°'
             }
         }
         text, color = self.window.render_surf_cell(data_store)
-        self.assertEqual(text, '2FT')
+        self.assertEqual(text, '2FT\n64°')
         self.assertIsNone(color)
+
+    def test_render_surf_cell_no_water_temp(self):
+        """Test render_surf_cell when water temperature is not available"""
+        data_store = {
+            'surf': {
+                'text': '3FT',
+                'height': 3,
+                'water_temp': 'N/A'
+            }
+        }
+        text, color = self.window.render_surf_cell(data_store)
+        self.assertEqual(text, '3FT\nN/A')
+        self.assertEqual(color, self.window._color_green)
 
     def test_render_wind_cell_high(self):
         """Test render_wind_cell with high wind"""
@@ -454,7 +522,7 @@ class TestMainWindow(unittest.TestCase):
         """Test update_all_data method"""
         # Set up mocks
         mock_launches.return_value = [{'name': 'Test Launch'}]
-        mock_surf.return_value = {'text': '3FT', 'height': 3}
+        mock_surf.return_value = {'text': '3FT', 'height': 3, 'water_temp': '64°'}
         mock_wind.return_value = {'speed': 10, 'gust': 15, 'direction': 'SW'}
         mock_tide.return_value = {'value': 2.5, 'trend': 'rising'}
         mock_tidetimes.return_value = {'time_str': '10:00', 'type': 'High'}
@@ -490,7 +558,7 @@ class TestMainWindow(unittest.TestCase):
                 'time_diff_days': 0,
                 'time_diff_hours': 5
             }],
-            'surf': {'text': '3FT', 'height': 3},
+            'surf': {'text': '3FT', 'height': 3, 'water_temp': '64°'},
             'wind': {'speed': 10, 'gust': 15, 'direction': 'SW'},
             'tide': {'value': 2.5, 'trend': 'rising'},
             'tide_times': {'time_str': '10:00', 'type': 'High'},
