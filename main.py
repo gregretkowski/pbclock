@@ -8,6 +8,9 @@ from PyQt5.QtWidgets import *
 import threading
 import time
 import logging
+import subprocess
+import platform
+import socket
 
 from astral import LocationInfo
 from astral.sun import sun
@@ -19,6 +22,8 @@ import dateparser
 from datetime import datetime, timedelta
 
 from functools import wraps
+
+import psutil
 
 class MainWindow(QWidget):
 
@@ -347,6 +352,80 @@ class MainWindow(QWidget):
     def fetch_current_time(self):
         return datetime.now().strftime('%H:%M:%S')
 
+    def get_wireless_ssid(self):
+        """Get the wireless SSID in a platform-agnostic way"""
+        try:
+            system = platform.system()
+            if system == "Windows":
+                # Windows: use netsh command
+                result = subprocess.run(
+                    ['netsh', 'wlan', 'show', 'interfaces'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if 'SSID' in line and 'BSSID' not in line:
+                            parts = line.split(':')
+                            if len(parts) > 1:
+                                ssid = parts[1].strip()
+                                if ssid and ssid != "":
+                                    return ssid
+            elif system == "Linux":
+                # Linux: try iwgetid first, then fallback to nmcli
+                try:
+                    result = subprocess.run(
+                        ['iwgetid', '-r'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        return result.stdout.strip()
+                except FileNotFoundError:
+                    pass
+
+                # Fallback to nmcli
+                try:
+                    result = subprocess.run(
+                        ['nmcli', '-t', '-f', 'active,ssid', 'dev', 'wifi'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n'):
+                            if line.startswith('yes:'):
+                                ssid = line.split(':')[1].strip()
+                                if ssid:
+                                    return ssid
+                except FileNotFoundError:
+                    pass
+        except Exception as e:
+            logging.warning(f"Error getting SSID: {e}")
+        return "N/A"
+
+    def get_ip_address(self):
+        """Get the host IP address in a platform-agnostic way"""
+        try:
+            # Get all network interfaces
+            interfaces = psutil.net_if_addrs()
+            for interface_name, addresses in interfaces.items():
+                # Skip loopback interfaces
+                if interface_name.startswith('lo') or interface_name.startswith('Loopback'):
+                    continue
+                for addr in addresses:
+                    # Look for IPv4 addresses that are not loopback
+                    # Use socket.AF_INET instead of psutil.AF_INET
+                    if addr.family == socket.AF_INET:
+                        ip = addr.address
+                        if not ip.startswith('127.') and not ip.startswith('169.254.'):
+                            return ip
+        except Exception as e:
+            logging.warning(f"Error getting IP address: {e}")
+        return "N/A"
+
     def update_all_data(self):
         """Fetch all data sources and store in DataStore"""
         try:
@@ -553,6 +632,16 @@ class MainWindow(QWidget):
         """Show the overlay dialog with additional details"""
         if self.overlay is None:
             self.create_overlay()
+        else:
+            # Refresh SSID and IP address each time overlay is shown
+            ssid = self.get_wireless_ssid()
+            ip_address = self.get_ip_address()
+            # Find and update the SSID and IP labels
+            for widget in self.overlay.findChildren(QLabel):
+                if widget.text().startswith("SSID:"):
+                    widget.setText(f"SSID: {ssid}")
+                elif widget.text().startswith("IP Address:"):
+                    widget.setText(f"IP Address: {ip_address}")
         self.overlay_visible = True
         self.overlay.raise_()
         self.overlay.show()
@@ -587,8 +676,30 @@ class MainWindow(QWidget):
         font.setBold(True)
         font.setPointSize(int(font.pointSize() * 1.5))
         details_label.setFont(font)
-        details_label.setStyleSheet("background-color: transparent;")
+        details_label.setStyleSheet("background-color: transparent; border: none;")
         details_label.setGeometry(10, 10, content_box_width - 50, 40)
+
+        # Get SSID and IP address
+        ssid = self.get_wireless_ssid()
+        ip_address = self.get_ip_address()
+
+        # Create SSID label
+        ssid_label = QLabel(f"SSID: {ssid}", content_box)
+        ssid_label.setAlignment(Qt.AlignLeft)
+        ssid_font = ssid_label.font()
+        ssid_font.setPointSize(int(ssid_font.pointSize() * 1.2))
+        ssid_label.setFont(ssid_font)
+        ssid_label.setStyleSheet("background-color: transparent; border: none;")
+        ssid_label.setGeometry(20, 60, content_box_width - 40, 30)
+
+        # Create IP address label
+        ip_label = QLabel(f"IP Address: {ip_address}", content_box)
+        ip_label.setAlignment(Qt.AlignLeft)
+        ip_font = ip_label.font()
+        ip_font.setPointSize(int(ip_font.pointSize() * 1.2))
+        ip_label.setFont(ip_font)
+        ip_label.setStyleSheet("background-color: transparent; border: none;")
+        ip_label.setGeometry(20, 100, content_box_width - 40, 30)
 
         # Create close button (X) in upper right corner of content box
         close_button = QPushButton("×", content_box)
