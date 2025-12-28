@@ -403,23 +403,23 @@ class MainWindow(QWidget):
 
         launch_text = f"{next_launch['name']}\n{next_launch['time_diff']}"
 
-        # Check if launch is within 1 hour of sunrise or sunset
+        # Check if launch is within N minutes of sunrise or sunset
+        sunrise_sunset_margin = 60
         color = None
         if days == 0 and hours < 12:
             local_time = next_launch['net'].astimezone(tz).strftime("%H:%M")
             launch_text = f"{next_launch['name']}\n{local_time}"
 
-            # Check if launch is within 1 hour of sunrise/sunset
             if sunriseset:
                 launch_time = next_launch['net']
                 sunrise_time = sunriseset['sunrise']
                 sunset_time = sunriseset['sunset']
 
-                # Check if within 1 hour of sunrise
+                # Check if within 2 hours of sunrise or sunset
                 time_diff_sunrise = abs((launch_time - sunrise_time).total_seconds())
                 time_diff_sunset = abs((launch_time - sunset_time).total_seconds())
 
-                if time_diff_sunrise <= 3600 or time_diff_sunset <= 3600:  # 1 hour = 3600 seconds
+                if time_diff_sunrise <= (sunrise_sunset_margin * 60) or time_diff_sunset <= (sunrise_sunset_margin * 60):
                     color = self._color_orange
                 else:
                     color = self._color_green
