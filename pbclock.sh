@@ -3,7 +3,7 @@ git fetch --all
 git reset --hard origin/master
 if [ ! -d "venv" ]; then
     echo "venv directory not found, creating virtual environment..."
-    python3 -m venv venv
+    python3 -m venv --system-site-packages venv
 fi
 . venv/bin/activate
 if [ -f requirements.txt ]; then
