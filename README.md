@@ -59,6 +59,7 @@ https://github.com/ugotapi/calendarpi/blob/main/1-calendarpi.sh
 pi start x with a logged in user.
 
 the user's .xinitrc contains `/home/pi/pbclock/pbclock.sh`
+the system has python3-pyqt5 package installed
 
 we have cloned pbclock into /home/pi/pbclock
 the startup script will fetch the latest changes upstream and
