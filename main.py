@@ -34,6 +34,7 @@ class MainWindow(QWidget):
     _color_yellow = QColor(255, 255, 0)
     _color_red = QColor(255, 0, 0)
     _color_orange = QColor(255, 128, 0)
+    _color_light_blue = QColor(173, 216, 230)  # Light blue for rain indication
 
     _fudge = 12
 
@@ -48,6 +49,7 @@ class MainWindow(QWidget):
             'tide': None,
             'tide_times': None,
             'sunriseset': None,
+            'nws': None,
             'last_update': None
         }
         self.overlay = None
@@ -464,6 +466,13 @@ class MainWindow(QWidget):
             logging.error(f"Error fetching sunrise/sunset: {e}", exc_info=True)
             self.data_store['sunriseset'] = None
 
+        try:
+            import fetch_nws
+            self.data_store['nws'] = fetch_nws.fetch_nws('92109')
+        except Exception as e:
+            logging.error(f"Error fetching NWS data: {e}", exc_info=True)
+            self.data_store['nws'] = None
+
         self.data_store['last_update'] = datetime.now()
         self.last_update_time = datetime.now()
 
@@ -539,6 +548,12 @@ class MainWindow(QWidget):
 
         wind_text = f"{wind['speed']}g{wind['gust']} {wind['direction']}"
 
+        # Check for precipitation chance - light blue overrides green
+        nws = data_store.get('nws')
+        if nws and nws.get('precip_48h', 0) > 20:
+            return wind_text, self._color_light_blue
+
+        # Original wind-based color logic
         if wind['speed'] >= 11:
             return wind_text, self._color_green
         else:
