@@ -675,6 +675,9 @@ class MainWindow(QWidget):
         # Semi-transparent background
         self.overlay.setStyleSheet("background-color: rgba(0, 0, 0, 128);")
 
+        # Make overlay clickable to dismiss
+        self.overlay.mousePressEvent = lambda e: self.hide_overlay()
+
         # Create content box (white box that wraps both text and X button)
         content_box = QWidget(self.overlay)
         content_box.setStyleSheet("background-color: white; border: 2px solid black;")
@@ -683,6 +686,9 @@ class MainWindow(QWidget):
         content_box_x = (self._ui_width - content_box_width) // 2
         content_box_y = (self._ui_height - content_box_height) // 2
         content_box.setGeometry(content_box_x, content_box_y, content_box_width, content_box_height)
+
+        # Make content box clickable to dismiss (but don't dismiss when clicking the close button)
+        content_box.mousePressEvent = lambda e: self.hide_overlay()
 
         # Create "Additional Details" label (no box around just the text)
         details_label = QLabel("Additional Details", content_box)
