@@ -192,16 +192,47 @@ class MainWindow(QWidget):
         match = re.search(r'(\d+)(?:\+\d*)?FT$', surf_text)
         surf_height = int(match.group(1)) if match else 0
 
-        # Extract water temperature
+        # Extract water temperature - specifically target the WATER TEMP section
+        # The page has multiple temperature readings (air temp and water temp)
+        # We need to find the one in the WATER TEMP section, not the WEATHERFORECAST section
         water_temp = 'N/A'
-        water_temp_elem = soup.select_one('.current-data-desc')
-        if water_temp_elem:
-            # Get the text content and extract the temperature (e.g., "64°")
-            temp_text = water_temp_elem.get_text(strip=True)
-            temp_match = re.search(r'(\d+)°', temp_text)
-            if temp_match:
-                water_temp = f"{temp_match.group(1)}°"
-                logging.info(f"Water temperature: {water_temp}")
+
+        # Strategy 1: Find element containing "WATER TEMP" text, then find temperature nearby
+        water_temp_labels = soup.find_all(text=re.compile(r'WATER TEMP', re.I))
+        for label in water_temp_labels:
+            # Find the parent element containing this text
+            parent = label.find_parent()
+            if parent:
+                # Look for .current-data-desc within this section or nearby siblings
+                water_temp_elem = parent.find(class_='current-data-desc')
+                if not water_temp_elem:
+                    # Try finding in parent's parent
+                    grandparent = parent.find_parent()
+                    if grandparent:
+                        water_temp_elem = grandparent.find(class_='current-data-desc')
+                if water_temp_elem:
+                    temp_text = water_temp_elem.get_text(strip=True)
+                    temp_match = re.search(r'(\d+)°', temp_text)
+                    if temp_match:
+                        water_temp = f"{temp_match.group(1)}°"
+                        logging.info(f"Water temperature (method 1): {water_temp}")
+                        break
+
+        # Strategy 2: If not found, look for elements with "Wetsuit" (water temp indicator)
+        if water_temp == 'N/A':
+            all_data_desc = soup.find_all(class_='current-data-desc')
+            for elem in all_data_desc:
+                temp_text = elem.get_text(strip=True)
+                # Skip air temperature elements (they contain "mph" for wind speed)
+                if 'mph' in temp_text.lower():
+                    continue
+                # Water temp typically contains "Wetsuit" or has format like "63°3/2"
+                if 'wetsuit' in temp_text.lower():
+                    temp_match = re.search(r'(\d+)°', temp_text)
+                    if temp_match:
+                        water_temp = f"{temp_match.group(1)}°"
+                        logging.info(f"Water temperature (method 2): {water_temp}")
+                        break
 
         return {
             'text': surf_text,
