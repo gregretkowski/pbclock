@@ -39,6 +39,13 @@ class MainWindow(QWidget):
 
     _fudge = 12
 
+    _weather_icons = {
+        'sunny': 'sunny.svg',
+        'partly-cloudy': 'partly-cloudy.svg',
+        'cloudy': 'cloudy.svg',
+        'rain': 'rain.svg',
+    }
+
     def __init__(self):
         self.last_update_time = None
         super().__init__()
@@ -67,31 +74,107 @@ class MainWindow(QWidget):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-    def update_cell(self, grid_layout, position, title, text, background_color=None, clickable=False, click_callback=None):
+    def weather_state_from_nws(self, nws):
+        """Map NWS precip/cloud data to a weather icon key."""
+        if not nws:
+            return None
+
+        precip = nws.get('precip_today', 0) or 0
+        cloud = nws.get('cloud_cover', 0) or 0
+
+        if precip >= 40:
+            return 'rain'
+        if cloud >= 75:
+            return 'cloudy'
+        if cloud >= 30:
+            return 'partly-cloudy'
+        return 'sunny'
+
+    def _weather_icon_pixmap(self, icon_name, size, opacity=0.28):
+        """Render a weather SVG as a translucent pixmap hint."""
+        filename = self._weather_icons.get(icon_name)
+        if not filename:
+            return None
+
+        try:
+            from PyQt5.QtSvg import QSvgRenderer
+        except ImportError:
+            logging.warning("PyQt5.QtSvg unavailable; weather icons disabled")
+            return None
+
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icons', filename)
+        if not os.path.exists(path):
+            logging.warning(f"Weather icon not found: {path}")
+            return None
+
+        with open(path, 'r', encoding='utf-8') as f:
+            svg = f.read().replace('currentColor', '#333333')
+
+        renderer = QSvgRenderer(QByteArray(svg.encode('utf-8')))
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setOpacity(opacity)
+        renderer.render(painter)
+        painter.end()
+        return pixmap
+
+    def update_cell(self, grid_layout, position, title, text, background_color=None, clickable=False, click_callback=None, icon_name=None):
         # Remove existing widget at the position if any
         if grid_layout.itemAtPosition(*position):
             existing_widget = grid_layout.itemAtPosition(*position).widget()
             existing_widget.setParent(None)
-        label = QLabel(title+"\n"+text, self)
-        label.setAlignment(Qt.AlignCenter)
-        font = label.font()
-        font.setBold(True)
-        font.setPointSize(int(font.pointSize() * 1.5))  # Double the font size
-        label.setFont(font)
+
         if isinstance(background_color, str):
             background_color = QColor(background_color)
 
-        if background_color:
-            label.setStyleSheet(f"background-color: {background_color.name()}; border: 1px solid black;")
-        else:
-            label.setStyleSheet("border: 1px solid black;")
-        label.setFixedWidth(int(self._ui_width / 3) - self._fudge)
-        label.setFixedHeight(int(self._ui_height / 2) - self._fudge)
+        width = int(self._ui_width / 3) - self._fudge
+        height = int(self._ui_height / 2) - self._fudge
+
+        label = QLabel(title + "\n" + text, self)
+        label.setAlignment(Qt.AlignCenter)
+        font = label.font()
+        font.setBold(True)
+        font.setPointSize(int(font.pointSize() * 1.5))
+        label.setFont(font)
 
         if clickable and click_callback:
             label.mousePressEvent = lambda e: click_callback()
             label.setCursor(Qt.PointingHandCursor)
 
+        icon_pixmap = self._weather_icon_pixmap(icon_name, min(width, height) - 16) if icon_name else None
+        if icon_pixmap:
+            cell = QWidget(self)
+            cell.setFixedWidth(width)
+            cell.setFixedHeight(height)
+            if background_color:
+                cell.setStyleSheet(f"background-color: {background_color.name()}; border: 1px solid black;")
+            else:
+                cell.setStyleSheet("border: 1px solid black;")
+
+            stack = QGridLayout(cell)
+            stack.setContentsMargins(0, 0, 0, 0)
+            stack.setSpacing(0)
+
+            icon_label = QLabel()
+            icon_label.setPixmap(icon_pixmap)
+            icon_label.setAlignment(Qt.AlignCenter)
+            icon_label.setStyleSheet("background: transparent; border: none;")
+
+            label.setParent(cell)
+            label.setStyleSheet("background: transparent; border: none;")
+
+            stack.addWidget(icon_label, 0, 0)
+            stack.addWidget(label, 0, 0)
+            grid_layout.addWidget(cell, *position)
+            return
+
+        if background_color:
+            label.setStyleSheet(f"background-color: {background_color.name()}; border: 1px solid black;")
+        else:
+            label.setStyleSheet("border: 1px solid black;")
+        label.setFixedWidth(width)
+        label.setFixedHeight(height)
         grid_layout.addWidget(label, *position)
 
 
@@ -660,7 +743,8 @@ class MainWindow(QWidget):
 
         try:
             text, color = self.render_wind_cell(self.data_store)
-            self.update_cell(grid_layout, (1, 1), "Wind", text, color)
+            icon_name = self.weather_state_from_nws(self.data_store.get('nws'))
+            self.update_cell(grid_layout, (1, 1), "Wind", text, color, icon_name=icon_name)
         except Exception as e:
             logging.error(f"Error rendering wind cell: {e}", exc_info=True)
             self.update_cell(grid_layout, (1, 1), "Wind", "Error", None)

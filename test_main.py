@@ -538,6 +538,20 @@ class TestMainWindow(unittest.TestCase):
         self.assertEqual(text, 'N/A')
         self.assertIsNone(color)
 
+    def test_weather_state_from_nws(self):
+        """Test weather icon selection from NWS precip/cloud data"""
+        self.assertIsNone(self.window.weather_state_from_nws(None))
+        self.assertEqual(self.window.weather_state_from_nws({'precip_today': 50, 'cloud_cover': 10}), 'rain')
+        self.assertEqual(self.window.weather_state_from_nws({'precip_today': 10, 'cloud_cover': 90}), 'cloudy')
+        self.assertEqual(self.window.weather_state_from_nws({'precip_today': 10, 'cloud_cover': 45}), 'partly-cloudy')
+        self.assertEqual(self.window.weather_state_from_nws({'precip_today': 5, 'cloud_cover': 10}), 'sunny')
+
+    def test_weather_icon_pixmap(self):
+        """Test weather SVG renders to a translucent pixmap"""
+        pixmap = self.window._weather_icon_pixmap('sunny', 64)
+        self.assertIsNotNone(pixmap)
+        self.assertFalse(pixmap.isNull())
+
     def test_render_tide_cell(self):
         """Test render_tide_cell"""
         data_store = {

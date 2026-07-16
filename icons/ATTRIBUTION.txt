@@ -1,0 +1,8 @@
+Weather icons from Meteocons (Bas Milius), MIT License.
+https://github.com/basmilius/meteocons
+
+Files:
+  sunny.svg          <- monochrome/clear-day
+  partly-cloudy.svg  <- monochrome/partly-cloudy-day
+  cloudy.svg         <- monochrome/overcast
+  rain.svg           <- monochrome/rain
