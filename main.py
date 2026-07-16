@@ -157,7 +157,7 @@ class MainWindow(QWidget):
         tz = pytz.timezone('America/Los_Angeles')
         current_time = datetime.now(tz)
         for item in data:
-            if any(loc in item['location'].lower() for loc in ['vandenberg', 'chica']):
+            if any(loc in item['location'].lower() for loc in ['vandenberg', 'chica', 'starbase']):
                 net_time = dateparser.parse(item['net'])
                 time_diff = net_time - current_time
                 days = time_diff.days
