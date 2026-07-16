@@ -29,6 +29,34 @@ class TestMainWindow(unittest.TestCase):
         """Set up test fixtures"""
         self.window = MainWindow()
 
+    def _mock_surf_soup(self, mock_bs, water_temp='64°'):
+        """Build a BeautifulSoup mock matching fetch_surf's parsing paths."""
+        mock_soup = Mock()
+        mock_surf_element = Mock()
+        mock_surf_element.text = 'Pacific Beach 3-5FT'
+
+        mock_soup.select_one.return_value = mock_surf_element
+
+        if water_temp is not None:
+            mock_water_temp_elem = Mock()
+            mock_water_temp_elem.get_text.return_value = f'Water temperature: {water_temp}'
+            mock_parent = Mock()
+            mock_parent.find.return_value = mock_water_temp_elem
+            mock_water_temp_label = Mock()
+            mock_water_temp_label.find_parent.return_value = mock_parent
+
+            def find_all_side_effect(*args, **kwargs):
+                if kwargs.get('text'):
+                    return [mock_water_temp_label]
+                return []
+        else:
+            def find_all_side_effect(*args, **kwargs):
+                return []
+
+        mock_soup.find_all.side_effect = find_all_side_effect
+        mock_bs.return_value = mock_soup
+        return mock_soup
+
     def test_data_store_initialization(self):
         """Test that DataStore is properly initialized"""
         self.assertIsNotNone(self.window.data_store)
@@ -57,6 +85,11 @@ class TestMainWindow(unittest.TestCase):
                 'net': '2024-12-21T15:00:00Z'
             },
             {
+                'name': 'Starship Flight 13',
+                'location': 'Starbase, Texas, USA',
+                'net': '2024-12-21T18:00:00Z'
+            },
+            {
                 'name': 'Test Launch 3',
                 'location': 'Somewhere Else',
                 'net': '2024-12-22T20:00:00Z'
@@ -73,8 +106,9 @@ class TestMainWindow(unittest.TestCase):
         result = self.window.fetch_launches()
 
         # Assertions
-        self.assertEqual(len(result), 2)  # Only Vandenberg and Chica
+        self.assertEqual(len(result), 3)  # Vandenberg, Chica, and Starbase
         self.assertEqual(result[0]['name'], 'Test Launch 1')
+        self.assertIn('location', result[0])
         self.assertIn('net', result[0])
         self.assertIn('time_diff', result[0])
         self.assertIn('time_diff_days', result[0])
@@ -84,40 +118,17 @@ class TestMainWindow(unittest.TestCase):
     @patch('main.BeautifulSoup')
     def test_fetch_surf(self, mock_bs, mock_get):
         """Test fetch_surf function"""
-        # Mock response
         mock_response = Mock()
         mock_response.content = b'<html></html>'
         mock_get.return_value = mock_response
+        self._mock_surf_soup(mock_bs, water_temp='64°')
 
-        # Mock BeautifulSoup
-        mock_soup = Mock()
-        # Mock surf forecast element
-        mock_surf_element = Mock()
-        mock_surf_element.text = 'Pacific Beach 3-5FT'
-        # Mock water temperature element
-        mock_temp_element = Mock()
-        mock_temp_element.get_text.return_value = 'Water temperature: 64°'
-
-        # Configure select_one to return different elements based on selector
-        def select_one_side_effect(selector):
-            if selector == '#fcst-current-title':
-                return mock_surf_element
-            elif selector == '.current-data-desc':
-                return mock_temp_element
-            return None
-
-        mock_soup.select_one.side_effect = select_one_side_effect
-        mock_bs.return_value = mock_soup
-
-        # Call the function
         result = self.window.fetch_surf()
 
-        # Assertions
         self.assertIsNotNone(result)
         self.assertIn('text', result)
         self.assertIn('height', result)
         self.assertIn('water_temp', result)
-        # The regex r'(\d+)(?:\+\d*)?FT$' matches "5FT" from "3-5FT", extracting 5
         self.assertEqual(result['height'], 5)
         self.assertEqual(result['water_temp'], '64°')
 
@@ -125,32 +136,13 @@ class TestMainWindow(unittest.TestCase):
     @patch('main.BeautifulSoup')
     def test_fetch_surf_no_water_temp(self, mock_bs, mock_get):
         """Test fetch_surf function when water temperature is not available"""
-        # Mock response
         mock_response = Mock()
         mock_response.content = b'<html></html>'
         mock_get.return_value = mock_response
+        self._mock_surf_soup(mock_bs, water_temp=None)
 
-        # Mock BeautifulSoup
-        mock_soup = Mock()
-        # Mock surf forecast element
-        mock_surf_element = Mock()
-        mock_surf_element.text = 'Pacific Beach 3-5FT'
-
-        # Configure select_one to return surf element but None for water temp
-        def select_one_side_effect(selector):
-            if selector == '#fcst-current-title':
-                return mock_surf_element
-            elif selector == '.current-data-desc':
-                return None
-            return None
-
-        mock_soup.select_one.side_effect = select_one_side_effect
-        mock_bs.return_value = mock_soup
-
-        # Call the function
         result = self.window.fetch_surf()
 
-        # Assertions
         self.assertIsNotNone(result)
         self.assertIn('text', result)
         self.assertIn('height', result)
@@ -158,6 +150,35 @@ class TestMainWindow(unittest.TestCase):
         self.assertEqual(result['height'], 5)
         self.assertEqual(result['water_temp'], 'N/A')
 
+    @patch('main.requests.get')
+    @patch('main.BeautifulSoup')
+    def test_fetch_surf_wetsuit_fallback(self, mock_bs, mock_get):
+        """Test fetch_surf water temp fallback via wetsuit text"""
+        mock_response = Mock()
+        mock_response.content = b'<html></html>'
+        mock_get.return_value = mock_response
+
+        mock_soup = Mock()
+        mock_surf_element = Mock()
+        mock_surf_element.text = 'Pacific Beach 2-3FT'
+        mock_soup.select_one.return_value = mock_surf_element
+
+        mock_wetsuit_elem = Mock()
+        mock_wetsuit_elem.get_text.return_value = '63°3/2 Wetsuit'
+
+        def find_all_side_effect(*args, **kwargs):
+            if kwargs.get('text'):
+                return []
+            if kwargs.get('class_') == 'current-data-desc':
+                return [mock_wetsuit_elem]
+            return []
+
+        mock_soup.find_all.side_effect = find_all_side_effect
+        mock_bs.return_value = mock_soup
+
+        result = self.window.fetch_surf()
+
+        self.assertEqual(result['water_temp'], '63°')
     @patch('main.requests.get')
     def test_fetch_wind(self, mock_get):
         """Test fetch_wind function"""
@@ -396,6 +417,27 @@ class TestMainWindow(unittest.TestCase):
         # Should be orange because within 1 hour of sunrise (30 min difference)
         self.assertEqual(color, self.window._color_orange)
 
+    def test_render_launch_cell_starbase(self):
+        """Test render_launch_cell uses purple for Starbase launches"""
+        tz = pytz.timezone('America/Los_Angeles')
+        launch_time = datetime.now(tz) + timedelta(hours=2)
+
+        data_store = {
+            'launches': [{
+                'name': 'Starship Flight 13',
+                'location': 'Starbase, Texas, USA',
+                'net': launch_time,
+                'time_diff': '0D 2H',
+                'time_diff_days': 0,
+                'time_diff_hours': 2
+            }],
+            'sunriseset': None
+        }
+
+        text, color = self.window.render_launch_cell(data_store)
+        self.assertIn('Starship Flight 13', text)
+        self.assertEqual(color, self.window._color_purple)
+
     def test_render_surf_cell_high(self):
         """Test render_surf_cell with high surf"""
         data_store = {
@@ -475,6 +517,27 @@ class TestMainWindow(unittest.TestCase):
         text, color = self.window.render_wind_cell(data_store)
         self.assertIsNone(color)
 
+    def test_render_wind_cell_rain(self):
+        """Test render_wind_cell shows light blue when rain is likely"""
+        data_store = {
+            'wind': {
+                'speed': 15,
+                'gust': 20,
+                'direction': 'SW'
+            },
+            'nws': {
+                'precip_48h': 45
+            }
+        }
+        text, color = self.window.render_wind_cell(data_store)
+        self.assertEqual(color, self.window._color_light_blue)
+
+    def test_render_wind_cell_no_data(self):
+        """Test render_wind_cell when wind data is unavailable"""
+        text, color = self.window.render_wind_cell({'wind': None})
+        self.assertEqual(text, 'N/A')
+        self.assertIsNone(color)
+
     def test_render_tide_cell(self):
         """Test render_tide_cell"""
         data_store = {
@@ -494,6 +557,19 @@ class TestMainWindow(unittest.TestCase):
         self.assertIn('High tide', text)
         self.assertIn('10:30', text)
 
+    def test_render_tide_cell_no_tide_times(self):
+        """Test render_tide_cell when no upcoming tide events are available"""
+        data_store = {
+            'tide': {
+                'value': 2.0,
+                'trend': 'falling'
+            },
+            'tide_times': None
+        }
+        text, color = self.window.render_tide_cell(data_store)
+        self.assertIn('2.0Ft v', text)
+        self.assertIn('No upcoming tide events', text)
+
     def test_render_sunriseset_cell(self):
         """Test render_sunriseset_cell"""
         tz = pytz.timezone('America/Los_Angeles')
@@ -511,6 +587,7 @@ class TestMainWindow(unittest.TestCase):
         self.assertIn('06:30', text)
         self.assertIn('^', text)  # Sunrise symbol
 
+    @patch('fetch_nws.fetch_nws')
     @patch.object(MainWindow, 'fetch_launches')
     @patch.object(MainWindow, 'fetch_surf')
     @patch.object(MainWindow, 'fetch_wind')
@@ -518,7 +595,7 @@ class TestMainWindow(unittest.TestCase):
     @patch.object(MainWindow, 'fetch_tidetimes')
     @patch.object(MainWindow, 'fetch_sunriseset')
     def test_update_all_data(self, mock_sunriseset, mock_tidetimes, mock_tide,
-                             mock_wind, mock_surf, mock_launches):
+                             mock_wind, mock_surf, mock_launches, mock_nws):
         """Test update_all_data method"""
         # Set up mocks
         mock_launches.return_value = [{'name': 'Test Launch'}]
@@ -532,6 +609,7 @@ class TestMainWindow(unittest.TestCase):
             'sunrise': datetime.now(),
             'sunset': datetime.now()
         }
+        mock_nws.return_value = {'precip_48h': 0}
 
         # Call the function
         self.window.update_all_data()
@@ -543,6 +621,7 @@ class TestMainWindow(unittest.TestCase):
         self.assertIsNotNone(self.window.data_store['tide'])
         self.assertIsNotNone(self.window.data_store['tide_times'])
         self.assertIsNotNone(self.window.data_store['sunriseset'])
+        self.assertIsNotNone(self.window.data_store['nws'])
         self.assertIsNotNone(self.window.data_store['last_update'])
 
     @patch.object(MainWindow, 'update_cell')
@@ -584,11 +663,30 @@ class TestMainWindow(unittest.TestCase):
         mock_update_data.assert_called_once()
         mock_update_cells.assert_called_once()
 
+    @patch('fetch_nws.fetch_nws')
     @patch.object(MainWindow, 'fetch_launches')
-    def test_update_all_data_error_handling(self, mock_launches):
+    @patch.object(MainWindow, 'fetch_surf')
+    @patch.object(MainWindow, 'fetch_wind')
+    @patch.object(MainWindow, 'fetch_tide')
+    @patch.object(MainWindow, 'fetch_tidetimes')
+    @patch.object(MainWindow, 'fetch_sunriseset')
+    def test_update_all_data_error_handling(self, mock_sunriseset, mock_tidetimes,
+                                            mock_tide, mock_wind, mock_surf,
+                                            mock_launches, mock_nws):
         """Test that update_all_data handles errors gracefully"""
-        # Make fetch_launches raise an exception
+        # Make fetch_launches raise an exception; other fetches stay mocked
         mock_launches.side_effect = Exception("Network error")
+        mock_surf.return_value = {'text': '3FT', 'height': 3, 'water_temp': '64°'}
+        mock_wind.return_value = {'speed': 10, 'gust': 15, 'direction': 'SW'}
+        mock_tide.return_value = {'value': 2.5, 'trend': 'rising'}
+        mock_tidetimes.return_value = {'time_str': '10:00', 'type': 'High'}
+        mock_sunriseset.return_value = {
+            'event': 'sunrise',
+            'time': datetime.now(),
+            'sunrise': datetime.now(),
+            'sunset': datetime.now()
+        }
+        mock_nws.return_value = {'precip_48h': 0}
 
         # Should not raise, but store empty list
         self.window.update_all_data()
