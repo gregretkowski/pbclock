@@ -56,6 +56,14 @@ https://github.com/ugotapi/calendarpi/blob/main/1-calendarpi.sh
 
 ##### Pi stuff
 
+##### Access (Greg)
+
+```bash
+ssh pi@pbclock
+```
+
+DNS should resolve on the local network. SSH key is installed, or use the password from the password manager.
+
 pi start x with a logged in user.
 
 the user's .xinitrc contains `/home/pi/pbclock/pbclock.sh`
