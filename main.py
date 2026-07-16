@@ -35,6 +35,7 @@ class MainWindow(QWidget):
     _color_red = QColor(255, 0, 0)
     _color_orange = QColor(255, 128, 0)
     _color_light_blue = QColor(173, 216, 230)  # Light blue for rain indication
+    _color_purple = QColor(180, 100, 255)  # Purple for Starbase (non-local) launches
 
     _fudge = 12
 
@@ -165,6 +166,7 @@ class MainWindow(QWidget):
                 time_diff_str = f"{days}D {hours}H"
                 filtered_data.append({
                     'name': item['name'],
+                    'location': item['location'],
                     'net': net_time,
                     'time_diff': time_diff_str,
                     'time_diff_days': days,
@@ -522,9 +524,17 @@ class MainWindow(QWidget):
 
         launch_text = f"{next_launch['name']}\n{next_launch['time_diff']}"
 
+        # Starbase launches aren't visible locally, so flag them distinctly
+        is_starbase = 'starbase' in next_launch.get('location', '').lower()
+
         # Check if launch is within N minutes of sunrise or sunset
         sunrise_sunset_margin = 60
         color = None
+        if is_starbase:
+            if days == 0 and hours < 12:
+                local_time = next_launch['net'].astimezone(tz).strftime("%H:%M")
+                launch_text = f"{next_launch['name']}\n{local_time}"
+            return launch_text, self._color_purple
         if days == 0 and hours < 12:
             local_time = next_launch['net'].astimezone(tz).strftime("%H:%M")
             launch_text = f"{next_launch['name']}\n{local_time}"
