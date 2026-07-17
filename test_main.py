@@ -10,6 +10,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from main import MainWindow
+import fetch_nws
 
 
 class TestMainWindow(unittest.TestCase):
@@ -57,15 +58,28 @@ class TestMainWindow(unittest.TestCase):
         mock_bs.return_value = mock_soup
         return mock_soup
 
-    def test_data_store_initialization(self):
-        """Test that DataStore is properly initialized"""
-        self.assertIsNotNone(self.window.data_store)
-        self.assertEqual(self.window.data_store['launches'], [])
-        self.assertIsNone(self.window.data_store['surf'])
-        self.assertIsNone(self.window.data_store['wind'])
-        self.assertIsNone(self.window.data_store['tide'])
-        self.assertIsNone(self.window.data_store['tide_times'])
-        self.assertIsNone(self.window.data_store['sunriseset'])
+    def test_load_data_store_from_file(self):
+        """Test loading a datafile fixture into data_store shape"""
+        path = os.path.join(os.path.dirname(__file__), 'testdata', 'icons_demo.json')
+        data = self.window.load_data_store_from_file(path)
+
+        self.assertEqual(len(data['launches']), 1)
+        self.assertEqual(data['launches'][0]['name'], 'Starship Flight 13')
+        self.assertEqual(data['launches'][0]['time_diff_hours'], 3)
+        self.assertEqual(data['surf']['height'], 3)
+        self.assertEqual(data['wind']['speed'], 12)
+        self.assertEqual(data['wind']['gust'], 14)
+        self.assertEqual(data['nws']['forecasts'][0]['icon'], 'sunny')
+        self.assertEqual(data['nws']['forecasts'][3]['icon'], 'partly-cloudy')
+        self.assertEqual(data['nws']['forecasts'][12]['icon'], 'thunderstorm')
+
+    def test_update_all_data_from_datafile(self):
+        """Test update_all_data uses fixture when datafile is set"""
+        path = os.path.join(os.path.dirname(__file__), 'testdata', 'icons_demo.json')
+        self.window.datafile = path
+        self.window.update_all_data()
+        self.assertEqual(self.window.data_store['surf']['text'], '3FT')
+        self.assertEqual(self.window.forecast_icon_for_hours(self.window.data_store, 12), 'thunderstorm')
 
     @patch('main.requests.get')
     @patch('main.dateparser.parse')
@@ -539,12 +553,56 @@ class TestMainWindow(unittest.TestCase):
         self.assertIsNone(color)
 
     def test_weather_state_from_nws(self):
-        """Test weather icon selection from NWS precip/cloud data"""
+        """Test weather icon selection from NWS data"""
         self.assertIsNone(self.window.weather_state_from_nws(None))
-        self.assertEqual(self.window.weather_state_from_nws({'precip_today': 50, 'cloud_cover': 10}), 'rain')
-        self.assertEqual(self.window.weather_state_from_nws({'precip_today': 10, 'cloud_cover': 90}), 'cloudy')
-        self.assertEqual(self.window.weather_state_from_nws({'precip_today': 10, 'cloud_cover': 45}), 'partly-cloudy')
-        self.assertEqual(self.window.weather_state_from_nws({'precip_today': 5, 'cloud_cover': 10}), 'sunny')
+        self.assertEqual(
+            self.window.weather_state_from_nws({
+                'forecasts': {0: {'icon': 'rain', 'temp': 65}}
+            }),
+            'rain'
+        )
+        self.assertEqual(
+            self.window.weather_state_from_nws({'precip_today': 50, 'cloud_cover': 10}),
+            'rain'
+        )
+        self.assertEqual(
+            self.window.weather_state_from_nws({'precip_today': 10, 'cloud_cover': 90}),
+            'cloudy'
+        )
+
+    def test_forecast_icon_for_hours(self):
+        """Test forecast icon lookup for hour offsets"""
+        data_store = {
+            'nws': {
+                'forecasts': {
+                    0: {'icon': 'sunny', 'temp': 72, 'temp_unit': 'F'},
+                    3: {'icon': 'windy', 'temp': 68, 'temp_unit': 'F'},
+                    12: {'icon': 'thunderstorm', 'temp': 64, 'temp_unit': 'F'},
+                }
+            }
+        }
+        self.assertEqual(self.window.forecast_icon_for_hours(data_store, 3), 'windy')
+        self.assertEqual(self.window.forecast_icon_for_hours(data_store, 12), 'thunderstorm')
+        self.assertIsNone(self.window.forecast_icon_for_hours({'nws': None}, 0))
+
+    def test_weather_state_from_period(self):
+        """Test weather icon mapping from NWS hourly periods"""
+        self.assertEqual(
+            fetch_nws.weather_state_from_period({
+                'shortForecast': 'Thunderstorms Likely',
+                'probabilityOfPrecipitation': {'value': 80},
+                'windSpeed': '10 mph',
+            }),
+            'thunderstorm'
+        )
+        self.assertEqual(
+            fetch_nws.weather_state_from_period({
+                'shortForecast': 'Windy',
+                'probabilityOfPrecipitation': {'value': 0},
+                'windSpeed': '20 mph',
+            }),
+            'windy'
+        )
 
     def test_weather_icon_pixmap(self):
         """Test weather SVG renders to a translucent pixmap"""
@@ -623,7 +681,7 @@ class TestMainWindow(unittest.TestCase):
             'sunrise': datetime.now(),
             'sunset': datetime.now()
         }
-        mock_nws.return_value = {'precip_48h': 0}
+        mock_nws.return_value = {'precip_48h': 0, 'forecasts': {}}
 
         # Call the function
         self.window.update_all_data()
@@ -700,7 +758,7 @@ class TestMainWindow(unittest.TestCase):
             'sunrise': datetime.now(),
             'sunset': datetime.now()
         }
-        mock_nws.return_value = {'precip_48h': 0}
+        mock_nws.return_value = {'precip_48h': 0, 'forecasts': {}}
 
         # Should not raise, but store empty list
         self.window.update_all_data()

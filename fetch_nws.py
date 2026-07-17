@@ -1,6 +1,78 @@
 import requests
 import logging
+import re
 from datetime import datetime, timedelta
+
+
+def parse_wind_mph(wind_speed):
+    """Extract the highest mph value from an NWS windSpeed string."""
+    if not wind_speed:
+        return 0
+    values = [int(v) for v in re.findall(r'\d+', str(wind_speed))]
+    return max(values) if values else 0
+
+
+def weather_state_from_period(period):
+    """Map an NWS hourly period to a weather icon key."""
+    if not period:
+        return None
+
+    short = (period.get('shortForecast') or '').lower()
+    precip = (period.get('probabilityOfPrecipitation') or {}).get('value') or 0
+    wind = parse_wind_mph(period.get('windSpeed'))
+
+    if 'thunder' in short:
+        return 'thunderstorm'
+    if precip >= 40 or 'rain' in short or 'shower' in short or 'drizzle' in short:
+        return 'rain'
+    if wind >= 15 or 'windy' in short or 'breezy' in short:
+        return 'windy'
+    if 'overcast' in short or short == 'cloudy':
+        return 'cloudy'
+    if 'partly' in short or 'mostly' in short:
+        return 'partly-cloudy'
+    if 'sunny' in short or 'clear' in short:
+        return 'sunny'
+    return 'partly-cloudy'
+
+
+def period_at_offset(periods, hours_ahead, now=None):
+    """Return the hourly period closest to now + hours_ahead."""
+    if not periods:
+        return None
+
+    if now is None:
+        first_start = datetime.fromisoformat(periods[0]['startTime'].replace('Z', '+00:00'))
+        now = datetime.now(first_start.tzinfo)
+
+    target = now + timedelta(hours=hours_ahead)
+    best_period = None
+    best_diff = None
+
+    for period in periods:
+        start = datetime.fromisoformat(period['startTime'].replace('Z', '+00:00'))
+        diff = abs((start - target).total_seconds())
+        if best_diff is None or diff < best_diff:
+            best_period = period
+            best_diff = diff
+
+    return best_period
+
+
+def build_forecast_snapshots(periods, offsets=(0, 3, 12), now=None):
+    """Build forecast icon/temp snapshots for the requested hour offsets."""
+    forecasts = {}
+    for offset in offsets:
+        period = period_at_offset(periods, offset, now=now)
+        if not period:
+            continue
+        forecasts[offset] = {
+            'icon': weather_state_from_period(period),
+            'temp': period.get('temperature'),
+            'temp_unit': period.get('temperatureUnit', 'F'),
+            'short_forecast': period.get('shortForecast'),
+        }
+    return forecasts
 
 
 def get_lat_lon_from_zip(zip_code):
@@ -69,6 +141,7 @@ def fetch_nws(zip_code='92109'):
             - precip_today: Precipitation chance for today (int, 0-100)
             - precip_tomorrow: Precipitation chance for tomorrow (int, 0-100)
             - precip_48h: Maximum precipitation chance in next 48 hours (int, 0-100)
+            - forecasts: Hourly snapshots keyed by offset hours (0, 3, 12)
     """
     logging.info(f"Fetching NWS data for ZIP {zip_code} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -192,13 +265,26 @@ def fetch_nws(zip_code='92109'):
         max_48h_precip = max_48h_precip if max_48h_precip is not None else 0
         today_cloud_cover = today_cloud_cover if today_cloud_cover is not None else 0
 
+        forecasts = {}
+        forecast_hourly_url = point_data['properties'].get('forecastHourly')
+        if forecast_hourly_url:
+            try:
+                hourly_response = requests.get(forecast_hourly_url, headers=headers, timeout=10)
+                hourly_response.raise_for_status()
+                hourly_data = hourly_response.json()
+                hourly_periods = hourly_data.get('properties', {}).get('periods', [])
+                forecasts = build_forecast_snapshots(hourly_periods)
+            except Exception as e:
+                logging.warning(f"Failed to fetch hourly forecast: {e}")
+
         result = {
             'high': today_high,
             'low': today_low,
             'cloud_cover': today_cloud_cover,
             'precip_today': today_precip,
             'precip_tomorrow': tomorrow_precip,
-            'precip_48h': max_48h_precip
+            'precip_48h': max_48h_precip,
+            'forecasts': forecasts,
         }
 
         logging.info(f"NWS data fetched: High={today_high}°F, Low={today_low}°F, "

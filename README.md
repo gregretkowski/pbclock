@@ -19,6 +19,13 @@ fetch launches; fetch sunset; (and wx); if a launch is within an hour of sunset 
    uv pip install -r requirements.txt
    python main.py
 
+Load a fixture instead of live network data (useful for icon/layout testing):
+
+```bash
+python main.py --datafile testdata/icons_demo.json
+```
+
+The datafile is JSON matching `data_store`. Relative fields like `net_hours_from_now` and `*_hours_from_now` are resolved at load time.
 ## Testing
 
 Run tests with:
@@ -68,6 +75,16 @@ pi start x with a logged in user.
 
 the user's .xinitrc contains `/home/pi/pbclock/pbclock.sh`
 the system has python3-pyqt5 package installed
+for weather icons, also install SVG support: `sudo apt install python3-pyqt5.qtsvg`
+
+## Weather forecast icons
+
+The bottom row keeps its original content (Tides / Wind / Clock) and adds faint weather-icon underlays from NWS hourly forecast:
+- left (Tides): +0 (now)
+- middle (Wind): +3 hours
+- right (Clock): +12 hours
+
+Matching `+0` / `+3` / `+12` labels sit in the upper-left of each box at the same low opacity as the icons.
 
 we have cloned pbclock into /home/pi/pbclock
 the startup script will fetch the latest changes upstream and

@@ -503,6 +503,46 @@ class TestFetchNWS(unittest.TestCase):
                             f"The 50-hour period (90%) should be excluded from 48h calculation.")
         self.assertEqual(result['precip_48h'], 80)
 
+    def test_weather_state_from_period(self):
+        """Test hourly period to icon mapping"""
+        self.assertEqual(
+            fetch_nws.weather_state_from_period({
+                'shortForecast': 'Slight Chance Rain Showers',
+                'probabilityOfPrecipitation': {'value': 45},
+                'windSpeed': '5 mph',
+            }),
+            'rain'
+        )
+        self.assertEqual(
+            fetch_nws.weather_state_from_period({
+                'shortForecast': 'Mostly Sunny',
+                'probabilityOfPrecipitation': {'value': 0},
+                'windSpeed': '18 mph',
+            }),
+            'windy'
+        )
+
+    def test_build_forecast_snapshots(self):
+        """Test building +0/+3/+12 forecast snapshots"""
+        now = datetime.now(pytz.timezone('America/Los_Angeles'))
+        periods = []
+        for hour in range(0, 24):
+            start = now + timedelta(hours=hour)
+            periods.append({
+                'startTime': start.isoformat(),
+                'temperature': 70 + hour,
+                'temperatureUnit': 'F',
+                'shortForecast': 'Sunny' if hour < 6 else 'Thunderstorms',
+                'probabilityOfPrecipitation': {'value': 0},
+                'windSpeed': '10 mph',
+            })
+
+        forecasts = fetch_nws.build_forecast_snapshots(periods, now=now)
+        self.assertIn(0, forecasts)
+        self.assertIn(3, forecasts)
+        self.assertIn(12, forecasts)
+        self.assertEqual(forecasts[12]['icon'], 'thunderstorm')
+
 
 if __name__ == '__main__':
     unittest.main()

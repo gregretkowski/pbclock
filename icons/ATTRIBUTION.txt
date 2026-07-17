@@ -3,6 +3,7 @@ https://github.com/basmilius/meteocons
 
 Files:
   sunny.svg          <- monochrome/clear-day
-  partly-cloudy.svg  <- monochrome/partly-cloudy-day
-  cloudy.svg         <- monochrome/overcast
-  rain.svg           <- monochrome/rain
+  partly-cloudy.svg  <- monochrome/partly-cloudy-day (mask layers removed for QtSvg)
+  cloudy.svg         <- monochrome/overcast (mask layers removed for QtSvg)  rain.svg           <- monochrome/rain
+  windy.svg          <- monochrome/wind
+  thunderstorm.svg   <- monochrome/thunderstorms

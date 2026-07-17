@@ -1,5 +1,7 @@
 import os
 import sys
+import json
+import argparse
 import requests
 from bs4 import BeautifulSoup
 from PyQt5.QtCore import *
@@ -25,6 +27,8 @@ from functools import wraps
 
 import psutil
 
+import fetch_nws
+
 class MainWindow(QWidget):
 
     _ui_width = 480
@@ -44,10 +48,15 @@ class MainWindow(QWidget):
         'partly-cloudy': 'partly-cloudy.svg',
         'cloudy': 'cloudy.svg',
         'rain': 'rain.svg',
+        'windy': 'windy.svg',
+        'thunderstorm': 'thunderstorm.svg',
     }
 
-    def __init__(self):
+    _weather_icon_opacity = 0.28
+
+    def __init__(self, datafile=None):
         self.last_update_time = None
+        self.datafile = datafile
         super().__init__()
         # Initialize DataStore to hold all fetched data
         self.data_store = {
@@ -75,23 +84,31 @@ class MainWindow(QWidget):
 
 
     def weather_state_from_nws(self, nws):
-        """Map NWS precip/cloud data to a weather icon key."""
+        """Map current NWS data to a weather icon key."""
         if not nws:
             return None
 
+        forecast = nws.get('forecasts', {}).get(0)
+        if forecast:
+            return forecast.get('icon')
+
         precip = nws.get('precip_today', 0) or 0
         cloud = nws.get('cloud_cover', 0) or 0
+        return fetch_nws.weather_state_from_period({
+            'shortForecast': (
+                'Rain' if precip >= 40 else
+                'Overcast' if cloud >= 75 else
+                'Partly Cloudy' if cloud >= 30 else
+                'Sunny'
+            ),
+            'probabilityOfPrecipitation': {'value': precip},
+            'windSpeed': '0 mph',
+        })
 
-        if precip >= 40:
-            return 'rain'
-        if cloud >= 75:
-            return 'cloudy'
-        if cloud >= 30:
-            return 'partly-cloudy'
-        return 'sunny'
-
-    def _weather_icon_pixmap(self, icon_name, size, opacity=0.28):
+    def _weather_icon_pixmap(self, icon_name, size, opacity=None):
         """Render a weather SVG as a translucent pixmap hint."""
+        if opacity is None:
+            opacity = self._weather_icon_opacity
         filename = self._weather_icons.get(icon_name)
         if not filename:
             return None
@@ -119,7 +136,18 @@ class MainWindow(QWidget):
         painter.end()
         return pixmap
 
-    def update_cell(self, grid_layout, position, title, text, background_color=None, clickable=False, click_callback=None, icon_name=None):
+    def _weather_corner_label(self, text):
+        """Small translucent offset label for forecast cells."""
+        alpha = int(self._weather_icon_opacity * 255)
+        label = QLabel(text, self)
+        label.setStyleSheet(f"background: transparent; border: none; color: rgba(51, 51, 51, {alpha});")
+        font = label.font()
+        font.setBold(True)
+        font.setPointSize(max(8, int(font.pointSize() * 0.9)))
+        label.setFont(font)
+        return label
+
+    def update_cell(self, grid_layout, position, title, text, background_color=None, clickable=False, click_callback=None, icon_name=None, corner_label=None):
         # Remove existing widget at the position if any
         if grid_layout.itemAtPosition(*position):
             existing_widget = grid_layout.itemAtPosition(*position).widget()
@@ -131,7 +159,8 @@ class MainWindow(QWidget):
         width = int(self._ui_width / 3) - self._fudge
         height = int(self._ui_height / 2) - self._fudge
 
-        label = QLabel(title + "\n" + text, self)
+        display_text = f"{title}\n{text}" if title else text
+        label = QLabel(display_text, self)
         label.setAlignment(Qt.AlignCenter)
         font = label.font()
         font.setBold(True)
@@ -143,7 +172,7 @@ class MainWindow(QWidget):
             label.setCursor(Qt.PointingHandCursor)
 
         icon_pixmap = self._weather_icon_pixmap(icon_name, min(width, height) - 16) if icon_name else None
-        if icon_pixmap:
+        if icon_pixmap or corner_label:
             cell = QWidget(self)
             cell.setFixedWidth(width)
             cell.setFixedHeight(height)
@@ -152,20 +181,30 @@ class MainWindow(QWidget):
             else:
                 cell.setStyleSheet("border: 1px solid black;")
 
+            if clickable and click_callback:
+                cell.mousePressEvent = lambda e: click_callback()
+                cell.setCursor(Qt.PointingHandCursor)
+
             stack = QGridLayout(cell)
-            stack.setContentsMargins(0, 0, 0, 0)
+            stack.setContentsMargins(4, 2, 4, 2)
             stack.setSpacing(0)
 
-            icon_label = QLabel()
-            icon_label.setPixmap(icon_pixmap)
-            icon_label.setAlignment(Qt.AlignCenter)
-            icon_label.setStyleSheet("background: transparent; border: none;")
+            if icon_pixmap:
+                icon_label = QLabel()
+                icon_label.setPixmap(icon_pixmap)
+                icon_label.setAlignment(Qt.AlignCenter)
+                icon_label.setStyleSheet("background: transparent; border: none;")
+                stack.addWidget(icon_label, 0, 0)
 
             label.setParent(cell)
             label.setStyleSheet("background: transparent; border: none;")
-
-            stack.addWidget(icon_label, 0, 0)
             stack.addWidget(label, 0, 0)
+
+            if corner_label:
+                corner = self._weather_corner_label(corner_label)
+                corner.setParent(cell)
+                stack.addWidget(corner, 0, 0, Qt.AlignTop | Qt.AlignLeft)
+
             grid_layout.addWidget(cell, *position)
             return
 
@@ -544,8 +583,99 @@ class MainWindow(QWidget):
             logging.warning(f"Error getting IP address: {e}")
         return "N/A"
 
+    def _parse_datetime_value(self, value, tz):
+        """Parse an ISO datetime string or hours-from-now number into tz-aware datetime."""
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return datetime.now(tz) + timedelta(hours=value)
+        if isinstance(value, str):
+            parsed = dateparser.parse(value)
+            if parsed is None:
+                return None
+            if parsed.tzinfo is None:
+                return tz.localize(parsed)
+            return parsed.astimezone(tz)
+        return value
+
+    def load_data_store_from_file(self, path):
+        """Load data_store contents from a JSON fixture file."""
+        with open(path, 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+
+        tz = pytz.timezone('America/Los_Angeles')
+        now = datetime.now(tz)
+        data = {}
+
+        launches = []
+        for item in raw.get('launches', []) or []:
+            if 'net_hours_from_now' in item:
+                net_time = now + timedelta(hours=item['net_hours_from_now'])
+            else:
+                net_time = self._parse_datetime_value(item.get('net'), tz)
+            if net_time is None:
+                continue
+            time_diff = net_time - now
+            days = time_diff.days
+            hours = time_diff.seconds // 3600
+            launches.append({
+                'name': item.get('name', 'Launch'),
+                'location': item.get('location', ''),
+                'net': net_time,
+                'time_diff': f"{days}D {hours}H",
+                'time_diff_days': days,
+                'time_diff_hours': hours,
+            })
+        data['launches'] = launches
+
+        data['surf'] = raw.get('surf')
+        data['wind'] = raw.get('wind')
+        data['tide'] = raw.get('tide')
+
+        tide_times = raw.get('tide_times')
+        if tide_times and 'time' in tide_times and isinstance(tide_times['time'], str):
+            tide_times = dict(tide_times)
+            tide_times['time'] = self._parse_datetime_value(tide_times['time'], tz)
+        data['tide_times'] = tide_times
+
+        sunriseset = raw.get('sunriseset')
+        if sunriseset:
+            sunriseset = dict(sunriseset)
+            if 'time_hours_from_now' in sunriseset:
+                sunriseset['time'] = now + timedelta(hours=sunriseset.pop('time_hours_from_now'))
+            else:
+                sunriseset['time'] = self._parse_datetime_value(sunriseset.get('time'), tz)
+            if 'sunrise_hours_from_now' in sunriseset:
+                sunriseset['sunrise'] = now + timedelta(hours=sunriseset.pop('sunrise_hours_from_now'))
+            else:
+                sunriseset['sunrise'] = self._parse_datetime_value(sunriseset.get('sunrise'), tz)
+            if 'sunset_hours_from_now' in sunriseset:
+                sunriseset['sunset'] = now + timedelta(hours=sunriseset.pop('sunset_hours_from_now'))
+            else:
+                sunriseset['sunset'] = self._parse_datetime_value(sunriseset.get('sunset'), tz)
+        data['sunriseset'] = sunriseset
+
+        nws = raw.get('nws')
+        if nws:
+            nws = dict(nws)
+            forecasts = nws.get('forecasts', {}) or {}
+            nws['forecasts'] = {int(k): v for k, v in forecasts.items()}
+        data['nws'] = nws
+
+        data['last_update'] = datetime.now()
+        return data
+
     def update_all_data(self):
         """Fetch all data sources and store in DataStore"""
+        if self.datafile:
+            try:
+                logging.info(f"Loading data from fixture: {self.datafile}")
+                self.data_store = self.load_data_store_from_file(self.datafile)
+                self.last_update_time = datetime.now()
+                return
+            except Exception as e:
+                logging.error(f"Error loading datafile {self.datafile}: {e}", exc_info=True)
+
         try:
             self.data_store['launches'] = self.fetch_launches()
         except Exception as e:
@@ -583,7 +713,6 @@ class MainWindow(QWidget):
             self.data_store['sunriseset'] = None
 
         try:
-            import fetch_nws
             self.data_store['nws'] = fetch_nws.fetch_nws('92109')
         except Exception as e:
             logging.error(f"Error fetching NWS data: {e}", exc_info=True)
@@ -719,6 +848,14 @@ class MainWindow(QWidget):
 
         return sun_text, None
 
+    def forecast_icon_for_hours(self, data_store, hours_ahead):
+        """Return the weather icon key for a forecast hour offset."""
+        nws = data_store.get('nws')
+        if not nws:
+            return None
+        forecast = nws.get('forecasts', {}).get(hours_ahead)
+        return forecast.get('icon') if forecast else None
+
     def update_all_cells(self):
         """Update all cells using render functions"""
         # Don't update cells if overlay is visible
@@ -742,19 +879,26 @@ class MainWindow(QWidget):
             self.update_cell(grid_layout, (0, 2), "Surf", "Error", None)
 
         try:
-            text, color = self.render_wind_cell(self.data_store)
-            icon_name = self.weather_state_from_nws(self.data_store.get('nws'))
-            self.update_cell(grid_layout, (1, 1), "Wind", text, color, icon_name=icon_name)
-        except Exception as e:
-            logging.error(f"Error rendering wind cell: {e}", exc_info=True)
-            self.update_cell(grid_layout, (1, 1), "Wind", "Error", None)
-
-        try:
             text, color = self.render_tide_cell(self.data_store)
-            self.update_cell(grid_layout, (1, 0), "Tides", text, color)
+            self.update_cell(
+                grid_layout, (1, 0), "Tides", text, color,
+                icon_name=self.forecast_icon_for_hours(self.data_store, 0),
+                corner_label="+0",
+            )
         except Exception as e:
             logging.error(f"Error rendering tide cell: {e}", exc_info=True)
-            self.update_cell(grid_layout, (1, 0), "Tides", "Error", None)
+            self.update_cell(grid_layout, (1, 0), "Tides", "Error", None, corner_label="+0")
+
+        try:
+            text, color = self.render_wind_cell(self.data_store)
+            self.update_cell(
+                grid_layout, (1, 1), "Wind", text, color,
+                icon_name=self.forecast_icon_for_hours(self.data_store, 3),
+                corner_label="+3",
+            )
+        except Exception as e:
+            logging.error(f"Error rendering wind cell: {e}", exc_info=True)
+            self.update_cell(grid_layout, (1, 1), "Wind", "Error", None, corner_label="+3")
 
         try:
             text, color = self.render_sunriseset_cell(self.data_store)
@@ -762,6 +906,8 @@ class MainWindow(QWidget):
         except Exception as e:
             logging.error(f"Error rendering sunrise/set cell: {e}", exc_info=True)
             self.update_cell(grid_layout, (0, 1), "Sunrise/Set", "Error", None)
+
+        self.update_time_cell()
 
     def update_data(self):
         """Fetch all data and update all cells"""
@@ -872,7 +1018,13 @@ class MainWindow(QWidget):
             else:
                 elapsed_time_str = "N/A"
             clock_text = f"{current_time}\n{elapsed_time_str}"
-            self.update_cell(grid_layout, (1, 2), 'Clock', clock_text, clickable=True, click_callback=self.show_overlay)
+            self.update_cell(
+                grid_layout, (1, 2), 'Clock', clock_text,
+                clickable=True,
+                click_callback=self.show_overlay,
+                icon_name=self.forecast_icon_for_hours(self.data_store, 12),
+                corner_label="+12",
+            )
 
         except KeyboardInterrupt:
             print("Interrupted!")
@@ -881,16 +1033,21 @@ class MainWindow(QWidget):
 
 if __name__ == '__main__':
 
+    parser = argparse.ArgumentParser(description='pbclock display')
+    parser.add_argument(
+        '--datafile',
+        help='JSON fixture matching data_store (skip live network fetches)',
+    )
+    args = parser.parse_args()
+
     print(os.getpid())
     print(os.getppid())
     app = QApplication(sys.argv)
-    main_window = MainWindow()
-    #print(main_window.fetch_tidetimes())
-    #sys.exit(0)
-    #print(main_window.fetch_launches())
-    #print(main_window.fetch_surf())
+    main_window = MainWindow(datafile=args.datafile)
     print('showing main window')
+    if args.datafile:
+        print(f'using datafile: {args.datafile}')
     main_window.show()
-    QTimer.singleShot(1000, main_window.update_data)  # No longer needed as the timer will handle updates
+    QTimer.singleShot(1000, main_window.update_data)
     sys.exit(app.exec_())
 

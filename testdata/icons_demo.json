@@ -1,0 +1,61 @@
+{
+  "launches": [
+    {
+      "name": "Starship Flight 13",
+      "location": "Starbase, Texas, USA",
+      "net_hours_from_now": 3
+    }
+  ],
+  "surf": {
+    "text": "3FT",
+    "height": 3,
+    "water_temp": "64°"
+  },
+  "wind": {
+    "speed": 12,
+    "gust": 14,
+    "direction": "SW"
+  },
+  "tide": {
+    "value": 2.4,
+    "trend": "rising"
+  },
+  "tide_times": {
+    "time_str": "18:30",
+    "type": "High Tide"
+  },
+  "sunriseset": {
+    "event": "sunset",
+    "time_hours_from_now": 4,
+    "sunrise_hours_from_now": -8,
+    "sunset_hours_from_now": 4
+  },
+  "nws": {
+    "high": 72,
+    "low": 62,
+    "cloud_cover": 10,
+    "precip_today": 5,
+    "precip_tomorrow": 10,
+    "precip_48h": 10,
+    "forecasts": {
+      "0": {
+        "icon": "sunny",
+        "temp": 72,
+        "temp_unit": "F",
+        "short_forecast": "Sunny"
+      },
+      "3": {
+        "icon": "partly-cloudy",
+        "temp": 70,
+        "temp_unit": "F",
+        "short_forecast": "Partly Cloudy"
+      },
+      "12": {
+        "icon": "thunderstorm",
+        "temp": 66,
+        "temp_unit": "F",
+        "short_forecast": "Thunderstorms"
+      }
+    }
+  }
+}
