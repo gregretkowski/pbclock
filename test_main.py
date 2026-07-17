@@ -71,7 +71,7 @@ class TestMainWindow(unittest.TestCase):
         self.assertEqual(data['wind']['gust'], 14)
         self.assertEqual(data['nws']['forecasts'][0]['icon'], 'sunny')
         self.assertEqual(data['nws']['forecasts'][3]['icon'], 'partly-cloudy')
-        self.assertEqual(data['nws']['forecasts'][12]['icon'], 'thunderstorm')
+        self.assertEqual(data['nws']['forecasts'][6]['icon'], 'thunderstorm')
 
     def test_update_all_data_from_datafile(self):
         """Test update_all_data uses fixture when datafile is set"""
@@ -79,7 +79,7 @@ class TestMainWindow(unittest.TestCase):
         self.window.datafile = path
         self.window.update_all_data()
         self.assertEqual(self.window.data_store['surf']['text'], '3FT')
-        self.assertEqual(self.window.forecast_icon_for_hours(self.window.data_store, 12), 'thunderstorm')
+        self.assertEqual(self.window.forecast_icon_for_hours(self.window.data_store, 6), 'thunderstorm')
 
     @patch('main.requests.get')
     @patch('main.dateparser.parse')
@@ -577,13 +577,15 @@ class TestMainWindow(unittest.TestCase):
                 'forecasts': {
                     0: {'icon': 'sunny', 'temp': 72, 'temp_unit': 'F'},
                     3: {'icon': 'windy', 'temp': 68, 'temp_unit': 'F'},
-                    12: {'icon': 'thunderstorm', 'temp': 64, 'temp_unit': 'F'},
+                    6: {'icon': 'thunderstorm', 'temp': 64, 'temp_unit': 'F'},
                 }
             }
         }
         self.assertEqual(self.window.forecast_icon_for_hours(data_store, 3), 'windy')
-        self.assertEqual(self.window.forecast_icon_for_hours(data_store, 12), 'thunderstorm')
+        self.assertEqual(self.window.forecast_icon_for_hours(data_store, 6), 'thunderstorm')
         self.assertIsNone(self.window.forecast_icon_for_hours({'nws': None}, 0))
+        self.assertEqual(self.window.forecast_temp_label(data_store, 0), '72°F')
+        self.assertEqual(self.window.forecast_temp_label(data_store, 6), '64°F')
 
     def test_weather_state_from_period(self):
         """Test weather icon mapping from NWS hourly periods"""

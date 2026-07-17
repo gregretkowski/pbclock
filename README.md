@@ -82,9 +82,9 @@ for weather icons, also install SVG support: `sudo apt install python3-pyqt5.qts
 The bottom row keeps its original content (Tides / Wind / Clock) and adds faint weather-icon underlays from NWS hourly forecast:
 - left (Tides): +0 (now)
 - middle (Wind): +3 hours
-- right (Clock): +12 hours
+- right (Clock): +6 hours
 
-Matching `+0` / `+3` / `+12` labels sit in the upper-left of each box at the same low opacity as the icons.
+Matching `+0` / `+3` / `+6` labels sit in the upper-left of each box at the same low opacity as the icons. Predicted °F temps sit in the lower-right.
 
 we have cloned pbclock into /home/pi/pbclock
 the startup script will fetch the latest changes upstream and

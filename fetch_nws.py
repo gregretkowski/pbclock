@@ -59,7 +59,7 @@ def period_at_offset(periods, hours_ahead, now=None):
     return best_period
 
 
-def build_forecast_snapshots(periods, offsets=(0, 3, 12), now=None):
+def build_forecast_snapshots(periods, offsets=(0, 3, 6), now=None):
     """Build forecast icon/temp snapshots for the requested hour offsets."""
     forecasts = {}
     for offset in offsets:
@@ -141,7 +141,7 @@ def fetch_nws(zip_code='92109'):
             - precip_today: Precipitation chance for today (int, 0-100)
             - precip_tomorrow: Precipitation chance for tomorrow (int, 0-100)
             - precip_48h: Maximum precipitation chance in next 48 hours (int, 0-100)
-            - forecasts: Hourly snapshots keyed by offset hours (0, 3, 12)
+            - forecasts: Hourly snapshots keyed by offset hours (0, 3, 6)
     """
     logging.info(f"Fetching NWS data for ZIP {zip_code} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 

@@ -523,7 +523,7 @@ class TestFetchNWS(unittest.TestCase):
         )
 
     def test_build_forecast_snapshots(self):
-        """Test building +0/+3/+12 forecast snapshots"""
+        """Test building +0/+3/+6 forecast snapshots"""
         now = datetime.now(pytz.timezone('America/Los_Angeles'))
         periods = []
         for hour in range(0, 24):
@@ -540,8 +540,8 @@ class TestFetchNWS(unittest.TestCase):
         forecasts = fetch_nws.build_forecast_snapshots(periods, now=now)
         self.assertIn(0, forecasts)
         self.assertIn(3, forecasts)
-        self.assertIn(12, forecasts)
-        self.assertEqual(forecasts[12]['icon'], 'thunderstorm')
+        self.assertIn(6, forecasts)
+        self.assertEqual(forecasts[6]['icon'], 'thunderstorm')
 
 
 if __name__ == '__main__':

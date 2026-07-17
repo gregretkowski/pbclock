@@ -137,17 +137,17 @@ class MainWindow(QWidget):
         return pixmap
 
     def _weather_corner_label(self, text):
-        """Small translucent offset label for forecast cells."""
+        """Small translucent offset/temp label for forecast cells."""
         alpha = int(self._weather_icon_opacity * 255)
         label = QLabel(text, self)
         label.setStyleSheet(f"background: transparent; border: none; color: rgba(51, 51, 51, {alpha});")
         font = label.font()
         font.setBold(True)
-        font.setPointSize(max(8, int(font.pointSize() * 0.9)))
+        font.setPointSize(max(16, int(font.pointSize() * 1.8)))
         label.setFont(font)
         return label
 
-    def update_cell(self, grid_layout, position, title, text, background_color=None, clickable=False, click_callback=None, icon_name=None, corner_label=None):
+    def update_cell(self, grid_layout, position, title, text, background_color=None, clickable=False, click_callback=None, icon_name=None, corner_label=None, temp_label=None):
         # Remove existing widget at the position if any
         if grid_layout.itemAtPosition(*position):
             existing_widget = grid_layout.itemAtPosition(*position).widget()
@@ -172,7 +172,7 @@ class MainWindow(QWidget):
             label.setCursor(Qt.PointingHandCursor)
 
         icon_pixmap = self._weather_icon_pixmap(icon_name, min(width, height) - 16) if icon_name else None
-        if icon_pixmap or corner_label:
+        if icon_pixmap or corner_label or temp_label:
             cell = QWidget(self)
             cell.setFixedWidth(width)
             cell.setFixedHeight(height)
@@ -204,6 +204,11 @@ class MainWindow(QWidget):
                 corner = self._weather_corner_label(corner_label)
                 corner.setParent(cell)
                 stack.addWidget(corner, 0, 0, Qt.AlignTop | Qt.AlignLeft)
+
+            if temp_label:
+                temp = self._weather_corner_label(temp_label)
+                temp.setParent(cell)
+                stack.addWidget(temp, 0, 0, Qt.AlignBottom | Qt.AlignRight)
 
             grid_layout.addWidget(cell, *position)
             return
@@ -856,6 +861,16 @@ class MainWindow(QWidget):
         forecast = nws.get('forecasts', {}).get(hours_ahead)
         return forecast.get('icon') if forecast else None
 
+    def forecast_temp_label(self, data_store, hours_ahead):
+        """Return a Fahrenheit temp label for a forecast hour offset."""
+        nws = data_store.get('nws')
+        if not nws:
+            return None
+        forecast = nws.get('forecasts', {}).get(hours_ahead)
+        if not forecast or forecast.get('temp') is None:
+            return None
+        return f"{forecast['temp']}°F"
+
     def update_all_cells(self):
         """Update all cells using render functions"""
         # Don't update cells if overlay is visible
@@ -884,6 +899,7 @@ class MainWindow(QWidget):
                 grid_layout, (1, 0), "Tides", text, color,
                 icon_name=self.forecast_icon_for_hours(self.data_store, 0),
                 corner_label="+0",
+                temp_label=self.forecast_temp_label(self.data_store, 0),
             )
         except Exception as e:
             logging.error(f"Error rendering tide cell: {e}", exc_info=True)
@@ -895,6 +911,7 @@ class MainWindow(QWidget):
                 grid_layout, (1, 1), "Wind", text, color,
                 icon_name=self.forecast_icon_for_hours(self.data_store, 3),
                 corner_label="+3",
+                temp_label=self.forecast_temp_label(self.data_store, 3),
             )
         except Exception as e:
             logging.error(f"Error rendering wind cell: {e}", exc_info=True)
@@ -1022,8 +1039,9 @@ class MainWindow(QWidget):
                 grid_layout, (1, 2), 'Clock', clock_text,
                 clickable=True,
                 click_callback=self.show_overlay,
-                icon_name=self.forecast_icon_for_hours(self.data_store, 12),
-                corner_label="+12",
+                icon_name=self.forecast_icon_for_hours(self.data_store, 6),
+                corner_label="+6",
+                temp_label=self.forecast_temp_label(self.data_store, 6),
             )
 
         except KeyboardInterrupt:
